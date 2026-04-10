@@ -495,8 +495,10 @@ const TyreGame = {
   },
 
   getPos(e) {
-    const t = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
-    return { x: t.clientX, y: t.clientY };
+    const t = (e.touches && e.touches.length) ? e.touches[0]
+            : (e.changedTouches && e.changedTouches.length) ? e.changedTouches[0]
+            : e;
+    return { x: t.clientX || 0, y: t.clientY || 0 };
   },
 
   handleDown(e) {

@@ -1,582 +1,513 @@
-// Lattu (Top Spinning) - Spin the top and keep it going!
+// Lattu (Spinning Top) - 3D with Three.js
 const LattuGame = {
-  canvas: null, ctx: null, width: 400, height: 450, dpr: 1,
-  top: null,
-  state: 'winding',
-  windPower: 0, windDirection: 1,
-  spinSpeed: 0, rotation: 0, wobble: 0,
+  scene: null, camera: null, renderer: null,
+  container: null, wrapper: null, overlay: null, powerBar: null,
+  width: 0, height: 0,
+  lattu: null, lattuBody: null,
+  state: 'winding', // winding, spinning, gameover
+  windPower: 0, windDir: 1, holding: false,
+  spinSpeed: 0, rotation: 0,
   score: 0, scoreTimer: 0,
-  boosts: [], obstacles: [], boostTimer: 0,
-  particles: [], floatingTexts: [], scuffMarks: [],
-  animationId: null, onScoreUpdate: null, holding: false,
+  boosts: [], obstacles: [], particles: [], scuffs: [],
+  spawnTimer: 0,
+  animationId: null, onScoreUpdate: null,
+  clock: null,
+  targetX: 0, targetZ: 0,
+  ready: false,
 
   init(container, onScoreUpdate) {
+    this.container = container;
     this.onScoreUpdate = onScoreUpdate;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.width = Math.min(400, window.innerWidth - 40);
+    this.width = Math.min(450, window.innerWidth - 40);
     this.height = Math.round(this.width * 1.1);
 
-    this.canvas = document.createElement('canvas');
-    this.canvas.style.width = this.width + 'px';
-    this.canvas.style.height = this.height + 'px';
-    this.canvas.width = this.width * this.dpr;
-    this.canvas.height = this.height * this.dpr;
-    container.appendChild(this.canvas);
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.scale(this.dpr, this.dpr);
+    this.wrapper = document.createElement('div');
+    this.wrapper.style.cssText = `position:relative;width:${this.width}px;height:${this.height}px;`;
+    container.appendChild(this.wrapper);
+    this.overlay = document.createElement('div');
+    this.overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:'Baloo 2',sans-serif;z-index:10;`;
+    this.wrapper.appendChild(this.overlay);
 
-    this._handlers = {
-      md: (e) => this.onDown(e),
-      mu: (e) => this.onUp(e),
-      mm: (e) => this.onMove(e),
-      ts: (e) => { e.preventDefault(); this.onDown(e.touches[0]); },
-      te: (e) => { e.preventDefault(); this.onUp(e.changedTouches[0]); },
-      tm: (e) => { e.preventDefault(); this.onMove(e.touches[0]); }
-    };
-    this.canvas.addEventListener('mousedown', this._handlers.md);
-    this.canvas.addEventListener('mouseup', this._handlers.mu);
-    this.canvas.addEventListener('mousemove', this._handlers.mm);
-    this.canvas.addEventListener('touchstart', this._handlers.ts, { passive: false });
-    this.canvas.addEventListener('touchend', this._handlers.te, { passive: false });
-    this.canvas.addEventListener('touchmove', this._handlers.tm, { passive: false });
+    if (typeof THREE === 'undefined') {
+      this.overlay.innerHTML = '<div style="color:#e65100;background:rgba(255,255,255,0.9);padding:20px;border-radius:10px;">Loading 3D engine...</div>';
+      const wait = () => { if (typeof THREE !== 'undefined') this.setup(); else setTimeout(wait, 100); };
+      wait();
+      return;
+    }
+    this.setup();
+  },
 
+  setup() {
+    this.overlay.innerHTML = '';
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xFFE8C0);
+    this.scene.fog = new THREE.Fog(0xFFE8C0, 12, 35);
+
+    this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 60);
+    this.camera.position.set(0, 6, 8);
+    this.camera.lookAt(0, 0.5, 0);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(this.width, this.height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.style.cssText = 'display:block;border-radius:12px;touch-action:none;';
+    this.wrapper.appendChild(this.renderer.domElement);
+
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const sun = new THREE.DirectionalLight(0xFFF0D0, 0.9);
+    sun.position.set(-4, 10, 5);
+    sun.castShadow = true;
+    sun.shadow.camera.left = -8; sun.shadow.camera.right = 8;
+    sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
+    sun.shadow.mapSize.width = 1024; sun.shadow.mapSize.height = 1024;
+    this.scene.add(sun);
+    const spot = new THREE.PointLight(0xFFFFEE, 0.5, 20);
+    spot.position.set(0, 6, 2);
+    this.scene.add(spot);
+
+    // Wooden floor
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(30, 30),
+      new THREE.MeshStandardMaterial({ color: 0xC8956D, roughness: 0.8 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    // Wood plank lines
+    for (let i = -14; i <= 14; i += 2) {
+      const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.03, 30),
+        new THREE.MeshBasicMaterial({ color: 0x8B6F47 })
+      );
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(i, 0.01, 0);
+      this.scene.add(line);
+    }
+
+    // Walls suggestion (distant)
+    for (let side of [-1, 1]) {
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, 4, 25),
+        new THREE.MeshStandardMaterial({ color: 0xFFE4B5 })
+      );
+      wall.position.set(side * 10, 2, 0);
+      this.scene.add(wall);
+    }
+
+    this.createLattu();
+    this.setupEvents();
+    this.clock = new THREE.Clock();
     this.reset();
+    this.ready = true;
     this.loop();
+    this.showReadyScreen();
   },
 
-  reset() {
-    this.state = 'winding';
-    this.windPower = 0; this.windDirection = 1;
-    this.spinSpeed = 0; this.rotation = 0; this.wobble = 0;
-    this.score = 0; this.scoreTimer = 0;
-    this.boosts = []; this.obstacles = []; this.boostTimer = 0;
-    this.particles = []; this.floatingTexts = []; this.scuffMarks = [];
-    this.holding = false;
-    this.top = { x: this.width / 2, y: this.height / 2 + 30, vx: 0, vy: 0 };
-    this.updateScore();
+  createLattu() {
+    const group = new THREE.Group();
+
+    // Main body - bulbous wooden top
+    const bodyGroup = new THREE.Group();
+    // Upper part (sphere truncated)
+    const upper = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      new THREE.MeshStandardMaterial({ color: 0xD32F2F, roughness: 0.4 })
+    );
+    upper.position.y = 0;
+    upper.castShadow = true;
+    bodyGroup.add(upper);
+
+    // Middle ring (blue stripe)
+    const ring1 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.47, 0.15, 20),
+      new THREE.MeshStandardMaterial({ color: 0x1E88E5 })
+    );
+    ring1.position.y = -0.07;
+    bodyGroup.add(ring1);
+
+    // Yellow stripe
+    const ring2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.47, 0.42, 0.12, 20),
+      new THREE.MeshStandardMaterial({ color: 0xFDD835 })
+    );
+    ring2.position.y = -0.2;
+    bodyGroup.add(ring2);
+
+    // Green stripe
+    const ring3 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.32, 0.15, 20),
+      new THREE.MeshStandardMaterial({ color: 0x43A047 })
+    );
+    ring3.position.y = -0.33;
+    bodyGroup.add(ring3);
+
+    // Lower tapering cone
+    const lower = new THREE.Mesh(
+      new THREE.ConeGeometry(0.32, 0.4, 16),
+      new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+    );
+    lower.position.y = -0.6;
+    lower.rotation.x = Math.PI;
+    bodyGroup.add(lower);
+
+    // Metal tip
+    const tip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.06, 0.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0xCCCCCC, metalness: 0.9, roughness: 0.15 })
+    );
+    tip.position.y = -0.9;
+    tip.rotation.x = Math.PI;
+    bodyGroup.add(tip);
+
+    // Top gold nub
+    const nub = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.7, roughness: 0.2 })
+    );
+    nub.position.y = 0.22;
+    bodyGroup.add(nub);
+
+    this.lattuBody = bodyGroup;
+    group.add(bodyGroup);
+    group.position.y = 0.9;
+
+    this.lattu = group;
+    this.scene.add(group);
   },
 
-  getCanvasPos(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (this.width / rect.width),
-      y: (e.clientY - rect.top) * (this.height / rect.height)
-    };
+  setupEvents() {
+    this._onDown = (e) => { e.preventDefault(); this.handleDown(e); };
+    this._onUp = (e) => { e.preventDefault(); this.handleUp(e); };
+    this._onMove = (e) => { e.preventDefault(); this.handleMove(e); };
+    const el = this.renderer.domElement;
+    el.addEventListener('mousedown', this._onDown);
+    el.addEventListener('mouseup', this._onUp);
+    el.addEventListener('mousemove', this._onMove);
+    el.addEventListener('touchstart', this._onDown, { passive: false });
+    el.addEventListener('touchend', this._onUp, { passive: false });
+    el.addEventListener('touchmove', this._onMove, { passive: false });
   },
 
-  onDown() {
+  getPos(e) {
+    const t = (e.touches && e.touches.length) ? e.touches[0]
+           : (e.changedTouches && e.changedTouches.length) ? e.changedTouches[0] : e;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const nx = ((t.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -((t.clientY - rect.top) / rect.height) * 2 + 1;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x: nx, y: ny }, this.camera);
+    const intersect = new THREE.Vector3();
+    raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), intersect);
+    return { x: intersect.x, z: intersect.z };
+  },
+
+  handleDown(e) {
     this.holding = true;
-    if (this.state === 'gameover') this.reset();
+    if (this.state === 'gameover') { this.reset(); this.hideOverlay(); }
   },
 
-  onUp() {
+  handleUp(e) {
     this.holding = false;
     if (this.state === 'winding' && this.windPower > 20) {
       this.state = 'spinning';
       this.spinSpeed = this.windPower;
+      this.hideOverlay();
       if (window.Sounds) Sounds.spin();
     }
   },
 
-  onMove(e) {
-    if (this.state === 'spinning' || this.state === 'slowing') {
-      const pos = this.getCanvasPos(e);
-      const dx = pos.x - this.top.x;
-      const dy = pos.y - this.top.y;
-      this.top.vx += dx * 0.008;
-      this.top.vy += dy * 0.008;
+  handleMove(e) {
+    if (this.state === 'spinning') {
+      const pos = this.getPos(e);
+      this.targetX = Math.max(-4, Math.min(4, pos.x));
+      this.targetZ = Math.max(-3, Math.min(3, pos.z));
     }
+  },
+
+  reset() {
+    this.state = 'winding';
+    this.windPower = 0;
+    this.windDir = 1;
+    this.spinSpeed = 0;
+    this.score = 0;
+    this.scoreTimer = 0;
+    this.spawnTimer = 0;
+    for (const b of this.boosts) this.scene.remove(b);
+    for (const o of this.obstacles) this.scene.remove(o);
+    for (const p of this.particles) this.scene.remove(p.mesh);
+    for (const s of this.scuffs) this.scene.remove(s);
+    this.boosts = []; this.obstacles = []; this.particles = []; this.scuffs = [];
+    this.lattu.position.set(0, 0.9, 0);
+    this.lattu.rotation.z = 0;
+    this.targetX = 0; this.targetZ = 0;
+    this.updateScore();
+    this.showReadyScreen();
   },
 
   updateScore() {
-    if (this.onScoreUpdate) {
-      this.onScoreUpdate(`Score: ${this.score}  |  Spin: ${Math.round(this.spinSpeed)}%`);
-    }
+    if (this.onScoreUpdate) this.onScoreUpdate(`Score: ${this.score}  |  Spin: ${Math.round(this.spinSpeed)}%`);
   },
 
-  spawnParticles(x, y, count, color) {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 3;
+  spawnBoost() {
+    const isPoint = Math.random() < 0.3;
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.25, 16, 16),
+      new THREE.MeshStandardMaterial({
+        color: isPoint ? 0xFFD700 : 0x43A047,
+        emissive: isPoint ? 0xFFAA00 : 0x2E7D32,
+        emissiveIntensity: 0.6,
+        metalness: 0.5, roughness: 0.2
+      })
+    );
+    mesh.position.set((Math.random() - 0.5) * 7, 0.8, (Math.random() - 0.5) * 5);
+    mesh.userData = { life: 8, type: isPoint ? 'point' : 'spin', phase: Math.random() * Math.PI * 2 };
+    this.boosts.push(mesh);
+    this.scene.add(mesh);
+  },
+
+  spawnObstacle() {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.5, 0.5),
+      new THREE.MeshStandardMaterial({
+        color: 0xE53935,
+        emissive: 0xAA1010, emissiveIntensity: 0.5
+      })
+    );
+    mesh.position.set((Math.random() - 0.5) * 7, 0.4, (Math.random() - 0.5) * 5);
+    mesh.castShadow = true;
+    mesh.userData = { life: 10, phase: Math.random() * Math.PI * 2 };
+    this.obstacles.push(mesh);
+    this.scene.add(mesh);
+  },
+
+  spawnSparks(x, y, z, color) {
+    for (let i = 0; i < 8; i++) {
+      const p = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 6, 6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+      );
+      p.position.set(x, y, z);
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 2;
+      this.scene.add(p);
       this.particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 1, decay: 0.03 + Math.random() * 0.03,
-        radius: 1.5 + Math.random() * 2.5, color
+        mesh: p,
+        vx: Math.cos(a) * s, vy: Math.random() * 2 + 0.5, vz: Math.sin(a) * s,
+        life: 0.8
       });
     }
   },
 
-  addFloat(x, y, text, color) {
-    this.floatingTexts.push({ x, y, text, color, life: 1, vy: -1.2 });
-  },
-
   update() {
+    if (!this.ready) return;
+    const dt = Math.min(0.05, this.clock.getDelta());
+
     // Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      p.x += p.vx; p.y += p.vy; p.life -= p.decay;
-      p.vx *= 0.97; p.vy *= 0.97;
-      if (p.life <= 0) this.particles.splice(i, 1);
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.vy -= 8 * dt;
+      p.life -= dt;
+      p.mesh.material.opacity = Math.max(0, p.life);
+      if (p.life <= 0) {
+        this.scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+        this.particles.splice(i, 1);
+      }
     }
-    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-      const ft = this.floatingTexts[i];
-      ft.y += ft.vy; ft.life -= 0.015;
-      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
-    }
-    // Scuff marks fade
-    for (let i = this.scuffMarks.length - 1; i >= 0; i--) {
-      this.scuffMarks[i].life -= 0.002;
-      if (this.scuffMarks[i].life <= 0) this.scuffMarks.splice(i, 1);
+
+    // Scuffs fade
+    for (let i = this.scuffs.length - 1; i >= 0; i--) {
+      const s = this.scuffs[i];
+      s.userData.life -= dt;
+      s.material.opacity = Math.max(0, s.userData.life * 0.4);
+      if (s.userData.life <= 0) {
+        this.scene.remove(s);
+        s.geometry.dispose();
+        s.material.dispose();
+        this.scuffs.splice(i, 1);
+      }
     }
 
     if (this.state === 'winding') {
       if (this.holding) {
-        this.windPower += this.windDirection * 1.8;
-        if (this.windPower >= 100) this.windDirection = -1;
-        if (this.windPower <= 0) this.windDirection = 1;
+        this.windPower += this.windDir * 80 * dt;
+        if (this.windPower >= 100) this.windDir = -1;
+        if (this.windPower <= 0) this.windDir = 1;
       }
+      // Pulse the lattu slightly
+      const s = 1 + Math.sin(Date.now() * 0.004) * 0.04;
+      this.lattu.scale.set(s, s, s);
+      this.updatePowerBar();
       return;
     }
 
-    if (this.state !== 'spinning' && this.state !== 'slowing') return;
+    if (this.state !== 'spinning') return;
 
-    this.spinSpeed -= 0.07 + (100 - this.spinSpeed) * 0.001;
-    this.rotation += this.spinSpeed * 0.05;
-    this.wobble = Math.max(0, (60 - this.spinSpeed) * 0.025);
+    // Decay spin
+    this.spinSpeed -= (0.08 + (100 - this.spinSpeed) * 0.001) * 60 * dt;
+    this.rotation += this.spinSpeed * 3 * dt;
+    this.lattuBody.rotation.y = this.rotation;
 
-    this.top.x += Math.sin(this.rotation * 0.3) * this.wobble;
-    this.top.y += Math.cos(this.rotation * 0.4) * this.wobble * 0.5;
-    this.top.x += this.top.vx;
-    this.top.y += this.top.vy;
-    this.top.vx *= 0.95;
-    this.top.vy *= 0.95;
+    // Wobble
+    const wobble = Math.max(0, (60 - this.spinSpeed) * 0.01);
+    this.lattu.rotation.z = Math.sin(Date.now() * 0.01) * wobble;
+    this.lattu.rotation.x = Math.cos(Date.now() * 0.012) * wobble;
 
-    // Scuff marks
-    if (this.spinSpeed > 5 && Math.random() < 0.15) {
-      this.scuffMarks.push({ x: this.top.x, y: this.top.y + 25, life: 1 });
-      if (this.scuffMarks.length > 50) this.scuffMarks.shift();
+    // Move towards target
+    this.lattu.position.x += (this.targetX - this.lattu.position.x) * 2 * dt;
+    this.lattu.position.z += (this.targetZ - this.lattu.position.z) * 2 * dt;
+
+    // Scuff mark trail
+    if (this.spinSpeed > 10 && Math.random() < 0.3) {
+      const sc = new THREE.Mesh(
+        new THREE.CircleGeometry(0.12, 8),
+        new THREE.MeshBasicMaterial({ color: 0x6B4423, transparent: true, opacity: 0.4 })
+      );
+      sc.rotation.x = -Math.PI / 2;
+      sc.position.set(this.lattu.position.x, 0.02, this.lattu.position.z);
+      sc.userData = { life: 2 };
+      this.scuffs.push(sc);
+      this.scene.add(sc);
     }
 
-    // Tip sparks
-    if (this.spinSpeed > 30 && Math.random() < 0.2) {
-      this.particles.push({
-        x: this.top.x + (Math.random() - 0.5) * 4,
-        y: this.top.y + 22,
-        vx: (Math.random() - 0.5) * 2,
-        vy: -Math.random() * 1.5,
-        life: 1, decay: 0.06, radius: 1 + Math.random(), color: '#FFD700'
-      });
+    // Sparks from tip when spinning fast
+    if (this.spinSpeed > 40 && Math.random() < 0.2) {
+      this.spawnSparks(
+        this.lattu.position.x + (Math.random() - 0.5) * 0.1,
+        0.1,
+        this.lattu.position.z + (Math.random() - 0.5) * 0.1,
+        0xFFD700
+      );
     }
 
-    const margin = 35;
-    if (this.top.x < margin) { this.top.x = margin; this.top.vx *= -0.5; }
-    if (this.top.x > this.width - margin) { this.top.x = this.width - margin; this.top.vx *= -0.5; }
-    if (this.top.y < margin + 25) { this.top.y = margin + 25; this.top.vy *= -0.5; }
-    if (this.top.y > this.height - margin) { this.top.y = this.height - margin; this.top.vy *= -0.5; }
-
-    this.scoreTimer++;
-    if (this.scoreTimer % 30 === 0) {
+    // Score timer
+    this.scoreTimer += dt;
+    if (this.scoreTimer > 0.5) {
+      this.scoreTimer = 0;
       this.score += Math.ceil(this.spinSpeed / 20);
       this.updateScore();
     }
 
-    this.boostTimer++;
-    if (this.boostTimer % 160 === 0) {
-      this.boosts.push({
-        x: 50 + Math.random() * (this.width - 100),
-        y: 60 + Math.random() * (this.height - 120),
-        type: Math.random() > 0.3 ? 'spin' : 'point',
-        radius: this.width * 0.035, life: 280, phase: Math.random() * Math.PI * 2
-      });
+    // Spawn boosts/obstacles
+    this.spawnTimer += dt;
+    if (this.spawnTimer > 2.5) {
+      this.spawnTimer = 0;
+      this.spawnBoost();
+      if (this.score > 10) this.spawnObstacle();
     }
 
-    if (this.boostTimer % 220 === 0 && this.score > 15) {
-      this.obstacles.push({
-        x: 50 + Math.random() * (this.width - 100),
-        y: 60 + Math.random() * (this.height - 120),
-        radius: this.width * 0.04, life: 350, phase: Math.random() * Math.PI * 2
-      });
-    }
-
+    // Update boosts
     for (let i = this.boosts.length - 1; i >= 0; i--) {
       const b = this.boosts[i];
-      b.life--;
-      if (b.life <= 0) { this.boosts.splice(i, 1); continue; }
-      const dx = this.top.x - b.x;
-      const dy = this.top.y - b.y;
-      if (Math.sqrt(dx * dx + dy * dy) < b.radius + 16) {
-        if (b.type === 'spin') {
-          this.spinSpeed = Math.min(100, this.spinSpeed + 20);
-          this.addFloat(b.x, b.y - 15, '+Spin!', '#43A047');
+      b.userData.life -= dt;
+      b.userData.phase += dt * 3;
+      b.position.y = 0.8 + Math.sin(b.userData.phase) * 0.15;
+      b.rotation.y += dt * 2;
+      if (b.userData.life <= 0) {
+        this.scene.remove(b);
+        b.geometry.dispose();
+        b.material.dispose();
+        this.boosts.splice(i, 1);
+        continue;
+      }
+      const dx = b.position.x - this.lattu.position.x;
+      const dz = b.position.z - this.lattu.position.z;
+      if (Math.sqrt(dx * dx + dz * dz) < 0.7) {
+        if (b.userData.type === 'spin') {
+          this.spinSpeed = Math.min(100, this.spinSpeed + 25);
+          this.spawnSparks(b.position.x, b.position.y, b.position.z, 0x43A047);
           if (window.Sounds) Sounds.boost();
         } else {
           this.score += 25;
-          this.addFloat(b.x, b.y - 15, '+25', '#FFD700');
+          this.spawnSparks(b.position.x, b.position.y, b.position.z, 0xFFD700);
           if (window.Sounds) Sounds.coin();
         }
-        this.spawnParticles(b.x, b.y, 8, b.type === 'spin' ? '#43A047' : '#FFD700');
+        this.scene.remove(b);
+        b.geometry.dispose();
+        b.material.dispose();
         this.boosts.splice(i, 1);
         this.updateScore();
       }
     }
 
+    // Update obstacles
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const o = this.obstacles[i];
-      o.life--;
-      if (o.life <= 0) { this.obstacles.splice(i, 1); continue; }
-      const dx = this.top.x - o.x;
-      const dy = this.top.y - o.y;
-      if (Math.sqrt(dx * dx + dy * dy) < o.radius + 16) {
-        this.spinSpeed = Math.max(0, this.spinSpeed - 25);
-        this.spawnParticles(o.x, o.y, 10, '#E53935');
-        this.addFloat(o.x, o.y - 15, '-Spin!', '#E53935');
-        if (window.Sounds) Sounds.hit();
+      o.userData.life -= dt;
+      o.rotation.y += dt * 2;
+      o.rotation.x += dt;
+      if (o.userData.life <= 0) {
+        this.scene.remove(o);
+        o.geometry.dispose();
+        o.material.dispose();
         this.obstacles.splice(i, 1);
+        continue;
+      }
+      const dx = o.position.x - this.lattu.position.x;
+      const dz = o.position.z - this.lattu.position.z;
+      if (Math.sqrt(dx * dx + dz * dz) < 0.7) {
+        this.spinSpeed = Math.max(0, this.spinSpeed - 30);
+        this.spawnSparks(o.position.x, o.position.y, o.position.z, 0xE53935);
+        this.scene.remove(o);
+        o.geometry.dispose();
+        o.material.dispose();
+        this.obstacles.splice(i, 1);
+        if (window.Sounds) Sounds.hit();
         this.updateScore();
       }
     }
 
-    if (this.spinSpeed < 5) this.state = 'slowing';
     if (this.spinSpeed <= 0) {
       this.spinSpeed = 0;
       this.state = 'gameover';
       if (window.Sounds) Sounds.fail();
-      this.updateScore();
+      this.lattu.rotation.z = Math.PI / 2;
+      this.lattu.position.y = 0.3;
+      this.showGameOver();
     }
+
+    // Camera gentle follow
+    this.camera.position.x += (this.lattu.position.x * 0.4 - this.camera.position.x) * 0.05;
+    this.camera.lookAt(this.lattu.position.x * 0.3, 0.5, this.lattu.position.z * 0.3);
+    this.updateScore();
   },
 
-  draw() {
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.width, this.height);
-
-    // Floor
-    const floorGrad = ctx.createLinearGradient(0, 0, 0, this.height);
-    floorGrad.addColorStop(0, '#e0d4be');
-    floorGrad.addColorStop(1, '#d4c5a9');
-    ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    // Tile pattern
-    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
-    ctx.lineWidth = 1;
-    const tileSize = this.width * 0.1;
-    for (let x = 0; x < this.width; x += tileSize) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.height); ctx.stroke();
-    }
-    for (let y = 0; y < this.height; y += tileSize) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.width, y); ctx.stroke();
-    }
-
-    // Scuff marks
-    for (const s of this.scuffMarks) {
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(120, 100, 70, ${s.life * 0.15})`;
-      ctx.fill();
-    }
-
-    // Boosts
-    const now = Date.now();
-    for (const b of this.boosts) {
-      const alpha = b.life < 50 ? b.life / 50 : 1;
-      const pulse = 1 + Math.sin(now * 0.005 + b.phase) * 0.12;
-      if (b.type === 'spin') {
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.radius * pulse, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(76, 175, 80, ${0.65 * alpha})`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(56, 142, 60, ${alpha})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Glow
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.radius * 1.6, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(76, 175, 80, ${0.1 * alpha})`;
-        ctx.fill();
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.font = `bold ${b.radius * 0.9}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('+', b.x, b.y);
-      } else {
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.radius * pulse, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 193, 7, ${0.65 * alpha})`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(255, 160, 0, ${alpha})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.font = `bold ${b.radius * 0.65}px sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('25', b.x, b.y);
-      }
-    }
-
-    // Obstacles
-    for (const o of this.obstacles) {
-      const alpha = o.life < 50 ? o.life / 50 : 1;
-      const pulse = 1 + Math.sin(now * 0.006 + o.phase) * 0.1;
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, o.radius * pulse, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(244, 67, 54, ${0.45 * alpha})`;
-      ctx.fill();
-      ctx.strokeStyle = `rgba(211, 47, 47, ${alpha})`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      ctx.font = `bold ${o.radius * 0.8}px sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('x', o.x, o.y);
-    }
-    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-
-    if (this.state === 'winding') {
-      this.drawWindingScreen(ctx);
-      return;
-    }
-
-    // Shadow
-    const shadowScale = this.spinSpeed > 5 ? 1 : 1 + (5 - this.spinSpeed) * 0.2;
-    ctx.beginPath();
-    ctx.ellipse(this.top.x + 2, this.top.y + 28, 16 * shadowScale, 5 * shadowScale, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.fill();
-
-    // Speed lines when fast
-    if (this.spinSpeed > 60) {
-      const lineAlpha = (this.spinSpeed - 60) / 200;
-      for (let i = 0; i < 6; i++) {
-        const angle = this.rotation * 0.2 + (i / 6) * Math.PI * 2;
-        const r = 25;
-        ctx.beginPath();
-        ctx.moveTo(this.top.x + Math.cos(angle) * r, this.top.y - 5 + Math.sin(angle) * r * 0.4);
-        ctx.lineTo(this.top.x + Math.cos(angle) * (r + 12), this.top.y - 5 + Math.sin(angle) * (r + 12) * 0.4);
-        ctx.strokeStyle = `rgba(255, 193, 7, ${lineAlpha})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-    }
-
-    // The lattu
-    this.drawLattu(this.top.x, this.top.y, this.rotation, this.spinSpeed > 5);
-
-    // Spin energy bar
-    if (this.state === 'spinning' || this.state === 'slowing') {
-      const barX = 15;
-      const barY = 12;
-      const barW = this.width - 30;
-      const barH = 10;
-
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 5); ctx.fill();
-
-      const fill = this.spinSpeed / 100;
-      const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-      barGrad.addColorStop(0, '#E53935');
-      barGrad.addColorStop(0.35, '#FF9933');
-      barGrad.addColorStop(0.7, '#43A047');
-      barGrad.addColorStop(1, '#43A047');
-      ctx.fillStyle = barGrad;
-      ctx.beginPath(); ctx.roundRect(barX, barY, barW * fill, barH, 5); ctx.fill();
-
-      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 5); ctx.stroke();
-
-      ctx.fillStyle = '#5a4a2a';
-      ctx.font = `${this.width * 0.025}px Poppins, sans-serif`;
-      ctx.fillText('Spin Energy', barX, barY - 3);
-    }
-
-    // Particles
-    for (const p of this.particles) {
-      ctx.globalAlpha = p.life;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-
-    // Floating texts
-    for (const ft of this.floatingTexts) {
-      ctx.globalAlpha = ft.life;
-      ctx.fillStyle = ft.color;
-      ctx.font = `bold ${this.width * 0.04}px Baloo 2, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(ft.text, ft.x, ft.y);
-      ctx.globalAlpha = 1;
-    }
-    ctx.textAlign = 'start';
-
-    // Game over
-    if (this.state === 'gameover') {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, this.width, this.height);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#FFD700';
-      ctx.font = `bold ${this.width * 0.08}px Baloo 2, sans-serif`;
-      ctx.fillText('Lattu Gir Gaya!', this.width / 2, this.height / 2 - 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = `${this.width * 0.045}px Poppins, sans-serif`;
-      ctx.fillText(`Score: ${this.score}`, this.width / 2, this.height / 2 + 15);
-      ctx.fillStyle = '#ffcc00';
-      ctx.font = `${this.width * 0.035}px Poppins, sans-serif`;
-      ctx.fillText('Tap to play again', this.width / 2, this.height / 2 + 50);
-      ctx.textAlign = 'start';
-    }
+  updatePowerBar() {
+    if (!this.overlay.firstChild) return;
+    const bar = this.overlay.querySelector('#power-fill');
+    if (bar) bar.style.width = this.windPower + '%';
   },
 
-  drawWindingScreen(ctx) {
-    // Title
-    ctx.fillStyle = '#E65100';
-    ctx.font = `bold ${this.width * 0.05}px Baloo 2, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText('Hold to wind up the Lattu!', this.width / 2, this.height * 0.15);
-
-    // Arc power gauge
-    const cx = this.width / 2;
-    const cy = this.height * 0.42;
-    const r = this.width * 0.18;
-    const startAngle = Math.PI * 0.8;
-    const endAngle = Math.PI * 2.2;
-    const fillAngle = startAngle + (endAngle - startAngle) * (this.windPower / 100);
-
-    // Background arc
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, startAngle, endAngle);
-    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-    ctx.lineWidth = this.width * 0.04;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-
-    // Filled arc
-    if (this.windPower > 0) {
-      const arcGrad = ctx.createLinearGradient(cx - r, cy, cx + r, cy);
-      arcGrad.addColorStop(0, '#43A047');
-      arcGrad.addColorStop(0.5, '#FF9933');
-      arcGrad.addColorStop(1, '#E53935');
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, startAngle, fillAngle);
-      ctx.strokeStyle = arcGrad;
-      ctx.lineWidth = this.width * 0.04;
-      ctx.stroke();
-
-      // Glow at tip
-      const tipX = cx + Math.cos(fillAngle) * r;
-      const tipY = cy + Math.sin(fillAngle) * r;
-      ctx.beginPath();
-      ctx.arc(tipX, tipY, this.width * 0.03, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 153, 51, 0.4)';
-      ctx.fill();
-    }
-    ctx.lineCap = 'butt';
-
-    // Power text
-    ctx.fillStyle = '#3B2F1E';
-    ctx.font = `bold ${this.width * 0.08}px Baloo 2, sans-serif`;
-    ctx.fillText(`${Math.round(this.windPower)}%`, cx, cy + this.width * 0.03);
-
-    ctx.font = `${this.width * 0.033}px Poppins, sans-serif`;
-    ctx.fillStyle = '#8B7355';
-    ctx.fillText('Release to spin!', cx, cy + r + this.width * 0.08);
-
-    // Lattu preview
-    this.drawLattu(cx, this.height * 0.75, 0, false);
-    ctx.textAlign = 'start';
+  showReadyScreen() {
+    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.65);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid #FFD700;max-width:90%;">
+      <div style="font-size:24px;color:#FFD700;font-weight:800;margin-bottom:8px;">Lattu Ghumao!</div>
+      <div style="font-size:13px;margin-bottom:12px;line-height:1.5;">HOLD to wind up, RELEASE to spin<br>Drag to move • Collect boosts, dodge obstacles</div>
+      <div style="width:200px;height:16px;background:#333;border-radius:8px;margin:8px auto;overflow:hidden;">
+        <div id="power-fill" style="width:0%;height:100%;background:linear-gradient(90deg,#43A047,#FFD700,#E53935);transition:width 0.05s;"></div>
+      </div>
+      <div style="font-size:14px;color:#FFD700;font-weight:600;">Hold to power up!</div>
+    </div>`;
   },
 
-  drawLattu(x, y, rot, spinning) {
-    const ctx = this.ctx;
-    const scale = this.width / 400;
-    ctx.save();
-    ctx.translate(x, y);
-
-    if (spinning) {
-      ctx.rotate(Math.sin(rot * 0.1) * this.wobble * 0.3);
-    }
-
-    const bodyH = 40 * scale;
-    const bodyW = 28 * scale;
-    const stripeColors = ['#E53935', '#1E88E5', '#FDD835', '#43A047', '#FF8F00', '#8E24AA'];
-
-    // Body shape
-    ctx.beginPath();
-    ctx.moveTo(-bodyW, -5 * scale);
-    ctx.quadraticCurveTo(-bodyW - 2 * scale, -20 * scale, 0, -25 * scale);
-    ctx.quadraticCurveTo(bodyW + 2 * scale, -20 * scale, bodyW, -5 * scale);
-    ctx.lineTo(3 * scale, bodyH);
-    ctx.lineTo(-3 * scale, bodyH);
-    ctx.closePath();
-    ctx.fillStyle = '#D32F2F';
-    ctx.fill();
-    ctx.strokeStyle = '#B71C1C';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Color stripes
-    if (spinning && this.spinSpeed > 30) {
-      // Blur disc effect at high speed
-      for (let i = 0; i < 5; i++) {
-        const stripeY = (-18 + i * 10) * scale;
-        const w = bodyW * (1 - (stripeY / scale + 18) / 58) * 0.9;
-        if (w <= 0) continue;
-        const ci = (i + Math.floor(rot * 0.5)) % stripeColors.length;
-        ctx.fillStyle = stripeColors[ci];
-        ctx.globalAlpha = 0.7;
-        ctx.fillRect(-w, stripeY, w * 2, 7 * scale);
-        ctx.globalAlpha = 1;
-      }
-    } else {
-      for (let i = 0; i < 5; i++) {
-        const stripeY = (-18 + i * 10) * scale;
-        const w = bodyW * (1 - (stripeY / scale + 18) / 58) * 0.9;
-        if (w <= 0) continue;
-        ctx.fillStyle = stripeColors[i % stripeColors.length];
-        ctx.fillRect(-w, stripeY, w * 2, 7 * scale);
-      }
-    }
-
-    // Metal tip
-    ctx.beginPath();
-    ctx.moveTo(-3 * scale, bodyH);
-    ctx.lineTo(0, bodyH + 10 * scale);
-    ctx.lineTo(3 * scale, bodyH);
-    const tipGrad = ctx.createLinearGradient(-3 * scale, bodyH, 3 * scale, bodyH);
-    tipGrad.addColorStop(0, '#999');
-    tipGrad.addColorStop(0.5, '#ddd');
-    tipGrad.addColorStop(1, '#888');
-    ctx.fillStyle = tipGrad;
-    ctx.fill();
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-
-    // Dome highlight
-    ctx.beginPath();
-    ctx.ellipse(0, -22 * scale, bodyW * 0.5, 5 * scale, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.fill();
-
-    // Top nub
-    ctx.beginPath();
-    ctx.arc(0, -26 * scale, 5 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = '#FDD835';
-    ctx.fill();
-    ctx.strokeStyle = '#F9A825';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Body highlight
-    ctx.beginPath();
-    ctx.ellipse(-bodyW * 0.4, -8 * scale, bodyW * 0.15, bodyH * 0.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fill();
-
-    ctx.restore();
+  showGameOver() {
+    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.7);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid #FF6B00;max-width:85%;pointer-events:auto;cursor:pointer;">
+      <div style="font-size:28px;color:#FF6B00;font-weight:800;margin-bottom:8px;">Lattu Gir Gaya!</div>
+      <div style="font-size:16px;margin-bottom:12px;">Score: ${this.score}</div>
+      <div style="font-size:14px;color:#FFD700;">Tap to play again</div>
+    </div>`;
+    this.overlay.onclick = () => { this.overlay.onclick = null; this.reset(); this.hideOverlay(); };
   },
+
+  hideOverlay() { this.overlay.innerHTML = ''; this.overlay.onclick = null; },
+
+  draw() { if (this.renderer) this.renderer.render(this.scene, this.camera); },
 
   loop() {
     this.update();
@@ -586,15 +517,24 @@ const LattuGame = {
 
   destroy() {
     if (this.animationId) cancelAnimationFrame(this.animationId);
-    this.canvas.removeEventListener('mousedown', this._handlers.md);
-    this.canvas.removeEventListener('mouseup', this._handlers.mu);
-    this.canvas.removeEventListener('mousemove', this._handlers.mm);
-    this.canvas.removeEventListener('touchstart', this._handlers.ts);
-    this.canvas.removeEventListener('touchend', this._handlers.te);
-    this.canvas.removeEventListener('touchmove', this._handlers.tm);
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+      });
+    }
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+    this.scene = null; this.camera = null; this.renderer = null;
+    this.ready = false;
   },
 
   getControls() {
-    return 'Hold to wind up power, release to spin! Drag to nudge the lattu. Collect green boosts for spin energy, gold for points. Avoid red obstacles!';
+    return 'HOLD to wind up power, RELEASE to spin the lattu. Drag to move it. Collect green (spin boost) and gold (points) orbs. Avoid red obstacles!';
   }
 };

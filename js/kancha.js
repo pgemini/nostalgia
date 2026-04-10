@@ -1,644 +1,429 @@
-// Kancha (Marbles) - Aim and flick your marble to knock others out of the circle
+// Kancha (Marbles) - 3D with Three.js
 const KanchaGame = {
-  canvas: null,
-  ctx: null,
-  width: 400,
-  height: 500,
-  dpr: 1,
-  marbles: [],
-  player: null,
-  aiming: false,
-  aimStart: null,
-  aimEnd: null,
-  circleRadius: 120,
-  circleCenter: { x: 200, y: 200 },
-  score: 0,
-  shots: 10,
-  shotsLeft: 10,
-  state: 'aiming',
-  animationId: null,
-  friction: 0.984,
-  onScoreUpdate: null,
+  scene: null, camera: null, renderer: null,
+  container: null, wrapper: null, overlay: null,
+  width: 0, height: 0,
+  marbles: [], player: null, circleRing: null,
+  score: 0, shots: 10, shotsLeft: 10,
+  state: 'ready',
+  aiming: false, aimStart: null, aimEnd: null,
+  animationId: null, onScoreUpdate: null,
+  aimLine: null, aimArrow: null,
+  clock: null,
   particles: [],
-  floatingTexts: [],
-  shakeAmount: 0,
-  dirtSpots: [],
-  restartHandler: null,
+  ready: false,
 
   init(container, onScoreUpdate) {
+    this.container = container;
     this.onScoreUpdate = onScoreUpdate;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.width = Math.min(400, window.innerWidth - 40);
+    this.width = Math.min(500, window.innerWidth - 40);
     this.height = Math.round(this.width * 1.25);
-    this.circleRadius = this.width * 0.3;
-    this.circleCenter = { x: this.width / 2, y: this.height * 0.38 };
 
-    this.canvas = document.createElement('canvas');
-    this.canvas.style.width = this.width + 'px';
-    this.canvas.style.height = this.height + 'px';
-    this.canvas.width = this.width * this.dpr;
-    this.canvas.height = this.height * this.dpr;
-    container.appendChild(this.canvas);
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.scale(this.dpr, this.dpr);
+    this.wrapper = document.createElement('div');
+    this.wrapper.style.cssText = `position:relative;width:${this.width}px;height:${this.height}px;`;
+    container.appendChild(this.wrapper);
 
-    this._onDown = (e) => this.onPointerDown(e);
-    this._onMove = (e) => this.onPointerMove(e);
-    this._onUp = (e) => this.onPointerUp(e);
-    this._onTouchDown = (e) => { e.preventDefault(); this.onPointerDown(e.touches[0]); };
-    this._onTouchMove = (e) => { e.preventDefault(); this.onPointerMove(e.touches[0]); };
-    this._onTouchUp = (e) => { e.preventDefault(); this.onPointerUp(e.changedTouches[0]); };
+    this.overlay = document.createElement('div');
+    this.overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:'Baloo 2',sans-serif;z-index:10;`;
+    this.wrapper.appendChild(this.overlay);
 
-    this.canvas.addEventListener('mousedown', this._onDown);
-    this.canvas.addEventListener('mousemove', this._onMove);
-    this.canvas.addEventListener('mouseup', this._onUp);
-    this.canvas.addEventListener('touchstart', this._onTouchDown, { passive: false });
-    this.canvas.addEventListener('touchmove', this._onTouchMove, { passive: false });
-    this.canvas.addEventListener('touchend', this._onTouchUp, { passive: false });
+    if (typeof THREE === 'undefined') {
+      this.overlay.innerHTML = '<div style="color:#e65100;background:rgba(255,255,255,0.9);padding:20px;border-radius:10px;">Loading 3D engine...</div>';
+      const wait = () => { if (typeof THREE !== 'undefined') this.setup(); else setTimeout(wait, 100); };
+      wait();
+      return;
+    }
+    this.setup();
+  },
 
-    // Pre-generate dirt texture spots
-    this.dirtSpots = [];
-    for (let i = 0; i < 80; i++) {
-      this.dirtSpots.push({
-        x: Math.random() * this.width,
-        y: Math.random() * this.height,
-        r: 0.5 + Math.random() * 2.5,
-        a: 0.05 + Math.random() * 0.15
-      });
+  setup() {
+    this.overlay.innerHTML = '';
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xF0D898);
+    this.scene.fog = new THREE.Fog(0xF0D898, 15, 45);
+
+    this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 80);
+    this.camera.position.set(0, 9, 11);
+    this.camera.lookAt(0, 0, 0);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setSize(this.width, this.height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.style.cssText = 'display:block;border-radius:12px;touch-action:none;';
+    this.wrapper.appendChild(this.renderer.domElement);
+
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const sun = new THREE.DirectionalLight(0xFFF2D4, 1);
+    sun.position.set(-5, 12, 6);
+    sun.castShadow = true;
+    sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
+    sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
+    sun.shadow.mapSize.width = 1024; sun.shadow.mapSize.height = 1024;
+    this.scene.add(sun);
+
+    // Ground (dirt)
+    const groundGeo = new THREE.PlaneGeometry(40, 40);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0xC9A876, roughness: 1 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    // Scattered pebbles (decoration)
+    for (let i = 0; i < 40; i++) {
+      const p = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.08 + Math.random() * 0.1),
+        new THREE.MeshStandardMaterial({ color: 0x8B7355 })
+      );
+      const angle = Math.random() * Math.PI * 2;
+      const r = 6 + Math.random() * 10;
+      p.position.set(Math.cos(angle) * r, 0.05, Math.sin(angle) * r);
+      p.castShadow = true;
+      this.scene.add(p);
     }
 
+    // Chalk circle ring (torus flat on ground)
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(3.5, 0.08, 8, 48),
+      new THREE.MeshStandardMaterial({ color: 0xFFFFFF, emissive: 0xFFEEDD, emissiveIntensity: 0.2 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.04;
+    this.scene.add(ring);
+    this.circleRing = ring;
+
+    // Inner circle slight tint
+    const innerCircle = new THREE.Mesh(
+      new THREE.CircleGeometry(3.5, 32),
+      new THREE.MeshBasicMaterial({ color: 0xD4B888, transparent: true, opacity: 0.3 })
+    );
+    innerCircle.rotation.x = -Math.PI / 2;
+    innerCircle.position.y = 0.02;
+    this.scene.add(innerCircle);
+
+    // Aim arrow (thin box)
+    this.aimArrow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, 2),
+      new THREE.MeshBasicMaterial({ color: 0xFF6B00, transparent: true, opacity: 0.8 })
+    );
+    this.aimArrow.visible = false;
+    this.scene.add(this.aimArrow);
+
+    this.createMarbles();
+    this.setupEvents();
+    this.clock = new THREE.Clock();
     this.reset();
+    this.ready = true;
     this.loop();
+    this.showReadyScreen();
+  },
+
+  createMarbles() {
+    const colors = [0xE53935, 0x1E88E5, 0x43A047, 0xFDD835, 0x8E24AA, 0xFF8F00, 0x00ACC1, 0xD81B60];
+    this.marbles = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const r = 0.8 + Math.random() * 1.8;
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 24, 16),
+        new THREE.MeshStandardMaterial({
+          color: colors[i],
+          metalness: 0.3, roughness: 0.15,
+          emissive: colors[i], emissiveIntensity: 0.1
+        })
+      );
+      mesh.position.set(Math.cos(angle) * r, 0.35, Math.sin(angle) * r);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData = { vx: 0, vz: 0, active: true, color: colors[i], rotVel: new THREE.Vector3() };
+      this.scene.add(mesh);
+      this.marbles.push(mesh);
+    }
+
+    // Player marble (orange, slightly larger)
+    this.player = new THREE.Mesh(
+      new THREE.SphereGeometry(0.4, 24, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0xFF6B00,
+        metalness: 0.4, roughness: 0.1,
+        emissive: 0xFF4500, emissiveIntensity: 0.25
+      })
+    );
+    this.player.position.set(0, 0.4, 5);
+    this.player.castShadow = true;
+    this.player.userData = { vx: 0, vz: 0 };
+    this.scene.add(this.player);
+  },
+
+  setupEvents() {
+    this._onDown = (e) => { e.preventDefault(); this.handleDown(e); };
+    this._onMove = (e) => { e.preventDefault(); this.handleMove(e); };
+    this._onUp = (e) => { e.preventDefault(); this.handleUp(e); };
+    const el = this.renderer.domElement;
+    el.addEventListener('mousedown', this._onDown);
+    el.addEventListener('mousemove', this._onMove);
+    el.addEventListener('mouseup', this._onUp);
+    el.addEventListener('touchstart', this._onDown, { passive: false });
+    el.addEventListener('touchmove', this._onMove, { passive: false });
+    el.addEventListener('touchend', this._onUp, { passive: false });
+  },
+
+  getPos(e) {
+    const t = (e.touches && e.touches.length) ? e.touches[0]
+           : (e.changedTouches && e.changedTouches.length) ? e.changedTouches[0] : e;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    // Project to world on ground plane
+    const nx = ((t.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -((t.clientY - rect.top) / rect.height) * 2 + 1;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x: nx, y: ny }, this.camera);
+    const intersect = new THREE.Vector3();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    raycaster.ray.intersectPlane(plane, intersect);
+    return { x: intersect.x, z: intersect.z };
+  },
+
+  handleDown(e) {
+    if (this.state === 'gameover') { this.reset(); this.hideOverlay(); return; }
+    if (this.state === 'ready') { this.state = 'aiming_phase'; this.hideOverlay(); }
+    if (this.state !== 'aiming_phase') return;
+    const pos = this.getPos(e);
+    const dx = pos.x - this.player.position.x;
+    const dz = pos.z - this.player.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < 2.5) {
+      this.aiming = true;
+      this.aimStart = { x: this.player.position.x, z: this.player.position.z };
+      this.aimEnd = pos;
+    }
+  },
+
+  handleMove(e) {
+    if (!this.aiming) return;
+    this.aimEnd = this.getPos(e);
+  },
+
+  handleUp(e) {
+    if (!this.aiming) return;
+    this.aiming = false;
+    const end = this.getPos(e);
+    const dx = this.aimStart.x - end.x;
+    const dz = this.aimStart.z - end.z;
+    const power = Math.min(Math.sqrt(dx * dx + dz * dz) * 0.8, 10);
+    if (power > 0.3) {
+      const angle = Math.atan2(dz, dx);
+      this.player.userData.vx = Math.cos(angle) * power;
+      this.player.userData.vz = Math.sin(angle) * power;
+      this.state = 'shooting';
+      this.shotsLeft--;
+      if (window.Sounds) Sounds.flick();
+      this.updateScore();
+    }
+    this.aimArrow.visible = false;
+  },
+
+  updateScore() {
+    if (this.onScoreUpdate) this.onScoreUpdate(`Score: ${this.score} / 8  |  Shots: ${this.shotsLeft}`);
   },
 
   reset() {
     this.score = 0;
     this.shotsLeft = this.shots;
-    this.state = 'aiming';
-    this.marbles = [];
-    this.particles = [];
-    this.floatingTexts = [];
-    this.shakeAmount = 0;
-
-    if (this.restartHandler) {
-      this.canvas.removeEventListener('click', this.restartHandler);
-      this.canvas.removeEventListener('touchstart', this.restartHandler);
-      this.restartHandler = null;
+    this.state = 'ready';
+    // Reset marbles
+    const colors = [0xE53935, 0x1E88E5, 0x43A047, 0xFDD835, 0x8E24AA, 0xFF8F00, 0x00ACC1, 0xD81B60];
+    for (let i = 0; i < this.marbles.length; i++) {
+      const m = this.marbles[i];
+      const angle = (i / 8) * Math.PI * 2;
+      const r = 0.8 + Math.random() * 1.8;
+      m.position.set(Math.cos(angle) * r, 0.35, Math.sin(angle) * r);
+      m.userData.vx = 0; m.userData.vz = 0; m.userData.active = true;
+      m.visible = true;
     }
-
-    const colors = [
-      '#E53935', '#1E88E5', '#43A047', '#FDD835',
-      '#8E24AA', '#FF8F00', '#00ACC1', '#D81B60'
-    ];
-    const cr = this.circleRadius;
-    const cc = this.circleCenter;
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
-      const r = cr * 0.2 + Math.random() * cr * 0.45;
-      this.marbles.push({
-        x: cc.x + Math.cos(angle) * r,
-        y: cc.y + Math.sin(angle) * r,
-        vx: 0, vy: 0,
-        radius: this.width * 0.03,
-        color: colors[i],
-        active: true,
-        trail: []
-      });
-    }
-
-    this.player = {
-      x: this.width / 2,
-      y: this.height - this.width * 0.12,
-      vx: 0, vy: 0,
-      radius: this.width * 0.035,
-      color: '#FF6D00',
-      active: true,
-      trail: []
-    };
-
+    this.player.position.set(0, 0.4, 5);
+    this.player.userData.vx = 0; this.player.userData.vz = 0;
     this.updateScore();
-  },
-
-  getCanvasPos(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (this.width / rect.width),
-      y: (e.clientY - rect.top) * (this.height / rect.height)
-    };
-  },
-
-  onPointerDown(e) {
-    if (this.state === 'gameover') return;
-    if (this.state !== 'aiming') return;
-    const pos = this.getCanvasPos(e);
-    // Allow starting aim from anywhere near bottom half
-    const dx = pos.x - this.player.x;
-    const dy = pos.y - this.player.y;
-    if (Math.sqrt(dx * dx + dy * dy) < this.width * 0.15) {
-      this.aiming = true;
-      this.aimStart = { x: this.player.x, y: this.player.y };
-      this.aimEnd = pos;
-    }
-  },
-
-  onPointerMove(e) {
-    if (!this.aiming) return;
-    this.aimEnd = this.getCanvasPos(e);
-  },
-
-  onPointerUp(e) {
-    if (!this.aiming) return;
-    this.aiming = false;
-    const end = this.getCanvasPos(e);
-    const dx = this.aimStart.x - end.x;
-    const dy = this.aimStart.y - end.y;
-    const power = Math.min(Math.sqrt(dx * dx + dy * dy) * 0.15, 18);
-
-    if (power > 1.5) {
-      const angle = Math.atan2(dy, dx);
-      this.player.vx = Math.cos(angle) * power;
-      this.player.vy = Math.sin(angle) * power;
-      this.state = 'shooting';
-      this.shotsLeft--;
-      this.spawnDust(this.player.x, this.player.y, 6, '#c4a46a');
-      if (window.Sounds) Sounds.flick();
-      this.updateScore();
-    }
-    this.aimEnd = null;
-  },
-
-  updateScore() {
-    if (this.onScoreUpdate) {
-      this.onScoreUpdate(`Score: ${this.score} / 8  |  Shots: ${this.shotsLeft}`);
-    }
-  },
-
-  spawnDust(x, y, count, color) {
-    for (let i = 0; i < count; i++) {
-      this.particles.push({
-        x, y,
-        vx: (Math.random() - 0.5) * 3,
-        vy: (Math.random() - 0.5) * 3 - 1,
-        life: 1,
-        decay: 0.02 + Math.random() * 0.03,
-        radius: 2 + Math.random() * 4,
-        color: color || 'rgba(180,160,120,0.5)',
-        type: 'dust'
-      });
-    }
-  },
-
-  spawnSpark(x, y, count, color) {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 4;
-      this.particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 1,
-        decay: 0.03 + Math.random() * 0.04,
-        radius: 1.5 + Math.random() * 2.5,
-        color,
-        type: 'spark'
-      });
-    }
-  },
-
-  addFloatingText(x, y, text, color) {
-    this.floatingTexts.push({ x, y, text, color, life: 1, vy: -1.5 });
+    this.showReadyScreen();
   },
 
   update() {
-    // Update particles
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life -= p.decay;
-      if (p.type === 'dust') p.vy += 0.05;
-      p.vx *= 0.97;
-      p.vy *= 0.97;
-      if (p.life <= 0) this.particles.splice(i, 1);
+    if (!this.ready) return;
+    const dt = this.clock.getDelta();
+
+    // Pulse player marble when aiming
+    if (this.state === 'ready' || this.state === 'aiming_phase') {
+      const s = 1 + Math.sin(Date.now() * 0.005) * 0.05;
+      this.player.scale.set(s, s, s);
     }
 
-    // Update floating texts
-    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-      const ft = this.floatingTexts[i];
-      ft.y += ft.vy;
-      ft.life -= 0.015;
-      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+    // Aim arrow
+    if (this.aiming && this.aimEnd) {
+      const dx = this.aimStart.x - this.aimEnd.x;
+      const dz = this.aimStart.z - this.aimEnd.z;
+      const power = Math.min(Math.sqrt(dx * dx + dz * dz) * 0.8, 10);
+      const angle = Math.atan2(dz, dx);
+      this.aimArrow.visible = true;
+      this.aimArrow.position.set(
+        this.player.position.x + Math.cos(angle) * power * 0.3,
+        0.4,
+        this.player.position.z + Math.sin(angle) * power * 0.3
+      );
+      this.aimArrow.rotation.y = -angle - Math.PI / 2;
+      this.aimArrow.scale.z = Math.max(0.5, power * 0.3);
     }
 
-    // Decay shake
-    this.shakeAmount *= 0.9;
+    if (this.state !== 'shooting') return;
 
-    if (this.state !== 'shooting' && this.state !== 'settling') return;
+    const friction = Math.pow(0.4, dt);
+    // Move player
+    this.player.position.x += this.player.userData.vx * dt;
+    this.player.position.z += this.player.userData.vz * dt;
+    // Roll rotation based on velocity
+    this.player.rotation.x += this.player.userData.vz * dt * 2;
+    this.player.rotation.z -= this.player.userData.vx * dt * 2;
+    this.player.userData.vx *= friction;
+    this.player.userData.vz *= friction;
 
-    const allBodies = [this.player, ...this.marbles.filter(m => m.active)];
-
-    // Move all bodies
-    for (const b of allBodies) {
-      b.x += b.vx;
-      b.y += b.vy;
-      b.vx *= this.friction;
-      b.vy *= this.friction;
-
-      // Trail
-      const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-      if (speed > 1) {
-        b.trail.push({ x: b.x, y: b.y, life: 1 });
-        if (b.trail.length > 8) b.trail.shift();
-      }
-      for (let i = b.trail.length - 1; i >= 0; i--) {
-        b.trail[i].life -= 0.08;
-        if (b.trail[i].life <= 0) b.trail.splice(i, 1);
-      }
-
-      // Walls
-      if (b.x < b.radius) { b.x = b.radius; b.vx *= -0.6; }
-      if (b.x > this.width - b.radius) { b.x = this.width - b.radius; b.vx *= -0.6; }
-      if (b.y < b.radius) { b.y = b.radius; b.vy *= -0.6; }
-      if (b.y > this.height - b.radius) { b.y = this.height - b.radius; b.vy *= -0.6; }
+    // Move marbles
+    for (const m of this.marbles) {
+      if (!m.userData.active) continue;
+      m.position.x += m.userData.vx * dt;
+      m.position.z += m.userData.vz * dt;
+      m.rotation.x += m.userData.vz * dt * 3;
+      m.rotation.z -= m.userData.vx * dt * 3;
+      m.userData.vx *= friction;
+      m.userData.vz *= friction;
     }
 
     // Collisions: player vs marbles
     for (const m of this.marbles) {
-      if (!m.active) continue;
-      this.resolveCollision(this.player, m);
+      if (!m.userData.active) continue;
+      this.collide(this.player, m);
     }
-
-    // Marble-marble collisions
-    const active = this.marbles.filter(m => m.active);
-    for (let i = 0; i < active.length; i++) {
-      for (let j = i + 1; j < active.length; j++) {
-        this.resolveCollision(active[i], active[j]);
+    // Marble vs marble
+    for (let i = 0; i < this.marbles.length; i++) {
+      for (let j = i + 1; j < this.marbles.length; j++) {
+        if (!this.marbles[i].userData.active || !this.marbles[j].userData.active) continue;
+        this.collide(this.marbles[i], this.marbles[j]);
       }
     }
 
-    // Check marbles outside circle
+    // Marbles outside circle
     for (const m of this.marbles) {
-      if (!m.active) continue;
-      const dx = m.x - this.circleCenter.x;
-      const dy = m.y - this.circleCenter.y;
-      if (Math.sqrt(dx * dx + dy * dy) > this.circleRadius + m.radius) {
-        m.active = false;
+      if (!m.userData.active) continue;
+      const dist = Math.sqrt(m.position.x * m.position.x + m.position.z * m.position.z);
+      if (dist > 3.7) {
+        m.userData.active = false;
+        m.visible = false;
         this.score++;
-        this.spawnSpark(m.x, m.y, 12, m.color);
-        this.addFloatingText(m.x, m.y - 20, '+1', m.color);
-        this.shakeAmount = 3;
+        this.spawnBurst(m.position.x, 0.4, m.position.z, m.userData.color);
         if (window.Sounds) Sounds.pop();
         this.updateScore();
       }
     }
 
-    // Check settled
-    const allSlow = allBodies.every(b => Math.abs(b.vx) < 0.15 && Math.abs(b.vy) < 0.15);
-    if (allSlow && this.state === 'shooting') {
-      this.state = 'settling';
-      setTimeout(() => {
-        const remaining = this.marbles.filter(m => m.active).length;
-        if (remaining === 0 || this.shotsLeft <= 0) {
-          this.state = 'gameover';
-          if (remaining === 0) {
-            this.addFloatingText(this.width / 2, this.height / 2 - 60, 'Shandar!', '#FFD700');
-            this.shakeAmount = 6;
-            if (window.Sounds) Sounds.success();
-            for (let i = 0; i < 30; i++) {
-              const angle = Math.random() * Math.PI * 2;
-              const dist = Math.random() * 80;
-              this.spawnSpark(
-                this.width / 2 + Math.cos(angle) * dist,
-                this.height / 2 + Math.sin(angle) * dist,
-                3,
-                ['#FFD700', '#FF6D00', '#E53935', '#43A047'][Math.floor(Math.random() * 4)]
-              );
-            }
-          } else {
-            if (window.Sounds) Sounds.fail();
-          }
-          this.setupRestart();
-        } else {
-          this.player.x = this.width / 2;
-          this.player.y = this.height - this.width * 0.12;
-          this.player.vx = 0;
-          this.player.vy = 0;
-          this.player.trail = [];
-          this.state = 'aiming';
-        }
-      }, 400);
-    }
-  },
-
-  resolveCollision(a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const minDist = a.radius + b.radius;
-    if (dist >= minDist || dist === 0) return;
-
-    const nx = dx / dist;
-    const ny = dy / dist;
-    const overlap = minDist - dist;
-    a.x -= nx * overlap * 0.5;
-    a.y -= ny * overlap * 0.5;
-    b.x += nx * overlap * 0.5;
-    b.y += ny * overlap * 0.5;
-
-    const relVx = a.vx - b.vx;
-    const relVy = a.vy - b.vy;
-    const relDot = relVx * nx + relVy * ny;
-    if (relDot > 0) {
-      a.vx -= nx * relDot * 0.5;
-      a.vy -= ny * relDot * 0.5;
-      b.vx += nx * relDot * 0.5;
-      b.vy += ny * relDot * 0.5;
-
-      // Collision effects
-      const impactSpeed = Math.abs(relDot);
-      if (impactSpeed > 2) {
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        this.spawnDust(mx, my, Math.min(8, Math.floor(impactSpeed)), '#c4a46a');
-        this.shakeAmount = Math.min(4, impactSpeed * 0.4);
-        if (window.Sounds) Sounds.click();
-      }
-    }
-  },
-
-  setupRestart() {
-    this.restartHandler = (e) => {
-      e.preventDefault();
-      this.canvas.removeEventListener('click', this.restartHandler);
-      this.canvas.removeEventListener('touchstart', this.restartHandler);
-      this.restartHandler = null;
-      this.reset();
-    };
-    setTimeout(() => {
-      if (this.restartHandler) {
-        this.canvas.addEventListener('click', this.restartHandler);
-        this.canvas.addEventListener('touchstart', this.restartHandler);
-      }
-    }, 500);
-  },
-
-  draw() {
-    const ctx = this.ctx;
-    ctx.save();
-
-    // Screen shake
-    if (this.shakeAmount > 0.5) {
-      ctx.translate(
-        (Math.random() - 0.5) * this.shakeAmount,
-        (Math.random() - 0.5) * this.shakeAmount
-      );
-    }
-
-    // Ground
-    const groundGrad = ctx.createLinearGradient(0, 0, 0, this.height);
-    groundGrad.addColorStop(0, '#e8d8b8');
-    groundGrad.addColorStop(0.5, '#f0e4cc');
-    groundGrad.addColorStop(1, '#dbc8a0');
-    ctx.fillStyle = groundGrad;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    // Dirt texture spots
-    for (const d of this.dirtSpots) {
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(160, 140, 100, ${d.a})`;
-      ctx.fill();
-    }
-
-    // Circle boundary
-    ctx.beginPath();
-    ctx.arc(this.circleCenter.x, this.circleCenter.y, this.circleRadius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(190, 170, 130, 0.15)';
-    ctx.fill();
-    ctx.strokeStyle = '#8d6e4a';
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([6, 5]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Inner circle decoration
-    ctx.beginPath();
-    ctx.arc(this.circleCenter.x, this.circleCenter.y, this.circleRadius - 6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(141, 110, 74, 0.2)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Marble trails
-    for (const m of this.marbles) {
-      if (!m.active) continue;
-      this.drawTrail(m);
-    }
-    this.drawTrail(this.player);
-
-    // Marbles
-    for (const m of this.marbles) {
-      if (!m.active) continue;
-      this.drawMarble(m.x, m.y, m.radius, m.color);
-    }
-
-    // Player marble (slightly bigger glow)
-    this.drawMarble(this.player.x, this.player.y, this.player.radius, this.player.color);
-    if (this.state === 'aiming') {
-      ctx.beginPath();
-      ctx.arc(this.player.x, this.player.y, this.player.radius + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 109, 0, 0.35)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // Pulsing ring
-      const pulse = 0.5 + Math.sin(Date.now() * 0.005) * 0.3;
-      ctx.beginPath();
-      ctx.arc(this.player.x, this.player.y, this.player.radius + 8 + pulse * 4, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 109, 0, ${0.15 * pulse})`;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    // Aim line
-    if (this.aiming && this.aimEnd) {
-      const dx = this.aimStart.x - this.aimEnd.x;
-      const dy = this.aimStart.y - this.aimEnd.y;
-      const power = Math.min(Math.sqrt(dx * dx + dy * dy) * 0.15, 18);
-      const angle = Math.atan2(dy, dx);
-
-      // Dotted trajectory
-      const dotCount = Math.floor(power * 2);
-      for (let i = 0; i < dotCount; i++) {
-        const t = (i + 1) / dotCount;
-        const dotX = this.player.x + Math.cos(angle) * power * 8 * t;
-        const dotY = this.player.y + Math.sin(angle) * power * 8 * t;
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, 2.5 - t * 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 109, 0, ${0.7 - t * 0.5})`;
-        ctx.fill();
-      }
-
-      // Power bar
-      const barW = this.width * 0.3;
-      const barH = 10;
-      const barX = 15;
-      const barY = this.height - 25;
-      const fill = power / 18;
-      ctx.fillStyle = 'rgba(0,0,0,0.1)';
-      this.roundRect(ctx, barX, barY, barW, barH, 5);
-      ctx.fill();
-      const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-      barGrad.addColorStop(0, '#43A047');
-      barGrad.addColorStop(0.5, '#FF9933');
-      barGrad.addColorStop(1, '#E53935');
-      ctx.fillStyle = barGrad;
-      this.roundRect(ctx, barX, barY, barW * fill, barH, 5);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-      ctx.lineWidth = 1;
-      this.roundRect(ctx, barX, barY, barW, barH, 5);
-      ctx.stroke();
-      ctx.fillStyle = '#5a4a2a';
-      ctx.font = `${this.width * 0.025}px Poppins, sans-serif`;
-      ctx.fillText('Power', barX, barY - 5);
-    }
-
     // Particles
-    for (const p of this.particles) {
-      ctx.globalAlpha = p.life;
-      if (p.type === 'dust') {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * p.life, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.fill();
-        // Glow
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
-        ctx.fillStyle = p.color.replace(')', ', 0.2)').replace('rgb', 'rgba');
-        ctx.fill();
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.vy -= 9 * dt;
+      p.life -= dt;
+      p.mesh.material.opacity = Math.max(0, p.life);
+      if (p.life <= 0) {
+        this.scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+        this.particles.splice(i, 1);
       }
-      ctx.globalAlpha = 1;
     }
 
-    // Floating texts
-    for (const ft of this.floatingTexts) {
-      ctx.globalAlpha = ft.life;
-      ctx.fillStyle = ft.color;
-      ctx.font = `bold ${this.width * 0.05}px Baloo 2, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(ft.text, ft.x, ft.y);
-      ctx.textAlign = 'start';
-      ctx.globalAlpha = 1;
-    }
-
-    // Game over overlay
-    if (this.state === 'gameover') {
-      ctx.fillStyle = 'rgba(30, 20, 10, 0.65)';
-      ctx.fillRect(0, 0, this.width, this.height);
-
-      const remaining = this.marbles.filter(m => m.active).length;
-      const cy = this.height / 2;
-
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#FFD700';
-      ctx.font = `bold ${this.width * 0.08}px Baloo 2, sans-serif`;
-      ctx.fillText(remaining === 0 ? 'Shandar!' : 'Game Over!', this.width / 2, cy - 20);
-
-      ctx.fillStyle = '#fff';
-      ctx.font = `${this.width * 0.045}px Poppins, sans-serif`;
-      ctx.fillText(`${this.score} / 8 kanche bahar!`, this.width / 2, cy + 20);
-
-      ctx.fillStyle = 'rgba(255, 204, 0, 0.8)';
-      ctx.font = `${this.width * 0.035}px Poppins, sans-serif`;
-      ctx.fillText('Tap to play again', this.width / 2, cy + 55);
-      ctx.textAlign = 'start';
-    }
-
-    ctx.restore();
-  },
-
-  drawTrail(marble) {
-    const ctx = this.ctx;
-    for (const t of marble.trail) {
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, marble.radius * t.life * 0.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(180, 160, 120, ${t.life * 0.15})`;
-      ctx.fill();
+    // Check if settled
+    const allSlow = Math.abs(this.player.userData.vx) < 0.2 && Math.abs(this.player.userData.vz) < 0.2 &&
+      this.marbles.every(m => !m.userData.active || (Math.abs(m.userData.vx) < 0.2 && Math.abs(m.userData.vz) < 0.2));
+    if (allSlow && this.state === 'shooting') {
+      const remaining = this.marbles.filter(m => m.userData.active).length;
+      if (remaining === 0) {
+        this.state = 'gameover';
+        if (window.Sounds) Sounds.success();
+        setTimeout(() => this.showGameOver(true), 300);
+      } else if (this.shotsLeft <= 0) {
+        this.state = 'gameover';
+        if (window.Sounds) Sounds.fail();
+        setTimeout(() => this.showGameOver(false), 300);
+      } else {
+        // Reset player position
+        this.player.position.set(0, 0.4, 5);
+        this.player.userData.vx = 0; this.player.userData.vz = 0;
+        this.state = 'aiming_phase';
+      }
     }
   },
 
-  drawMarble(x, y, r, color) {
-    const ctx = this.ctx;
-    // Shadow
-    ctx.beginPath();
-    ctx.arc(x + 1.5, y + 2.5, r + 1, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fill();
-
-    // Body gradient
-    const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.05, x, y, r);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.15, this.lightenColor(color, 40));
-    grad.addColorStop(0.5, color);
-    grad.addColorStop(1, this.darkenColor(color, 50));
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // Edge definition
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = this.darkenColor(color, 60);
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-
-    // Glass highlight
-    ctx.beginPath();
-    ctx.arc(x - r * 0.22, y - r * 0.28, r * 0.32, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fill();
-
-    // Small secondary highlight
-    ctx.beginPath();
-    ctx.arc(x + r * 0.15, y + r * 0.2, r * 0.12, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fill();
+  collide(a, b) {
+    const dx = b.position.x - a.position.x;
+    const dz = b.position.z - a.position.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    const minD = a.geometry.parameters.radius + b.geometry.parameters.radius;
+    if (d >= minD || d === 0) return;
+    const nx = dx / d, nz = dz / d;
+    const overlap = minD - d;
+    a.position.x -= nx * overlap * 0.5;
+    a.position.z -= nz * overlap * 0.5;
+    b.position.x += nx * overlap * 0.5;
+    b.position.z += nz * overlap * 0.5;
+    const rvx = a.userData.vx - b.userData.vx;
+    const rvz = a.userData.vz - b.userData.vz;
+    const dot = rvx * nx + rvz * nz;
+    if (dot > 0) {
+      a.userData.vx -= nx * dot * 0.9;
+      a.userData.vz -= nz * dot * 0.9;
+      b.userData.vx += nx * dot * 0.9;
+      b.userData.vz += nz * dot * 0.9;
+      if (Math.abs(dot) > 2 && window.Sounds) Sounds.click();
+    }
   },
 
-  lightenColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16);
-    const r = Math.min(255, (num >> 16) + amount);
-    const g = Math.min(255, ((num >> 8) & 0xFF) + amount);
-    const b = Math.min(255, (num & 0xFF) + amount);
-    return `rgb(${r},${g},${b})`;
+  spawnBurst(x, y, z, color) {
+    for (let i = 0; i < 12; i++) {
+      const p = new THREE.Mesh(
+        new THREE.SphereGeometry(0.08, 6, 6),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
+      );
+      p.position.set(x, y, z);
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 3;
+      this.scene.add(p);
+      this.particles.push({
+        mesh: p,
+        vx: Math.cos(a) * s, vy: Math.random() * 3 + 1, vz: Math.sin(a) * s,
+        life: 1
+      });
+    }
   },
 
-  darkenColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16);
-    const r = Math.max(0, (num >> 16) - amount);
-    const g = Math.max(0, ((num >> 8) & 0xFF) - amount);
-    const b = Math.max(0, (num & 0xFF) - amount);
-    return `rgb(${r},${g},${b})`;
+  showReadyScreen() {
+    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.65);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid #FFD700;max-width:85%;">
+      <div style="font-size:26px;color:#FFD700;font-weight:800;margin-bottom:8px;">Kanche Nikalo!</div>
+      <div style="font-size:14px;margin-bottom:12px;line-height:1.5;">Drag from the orange marble to aim<br>Release to flick. Knock all 8 out of the circle!</div>
+      <div style="font-size:16px;color:#FFD700;font-weight:600;">Tap to start</div>
+    </div>`;
   },
 
-  roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
+  showGameOver(won) {
+    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.7);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid ${won ? '#FFD700' : '#FF6B00'};max-width:85%;pointer-events:auto;cursor:pointer;">
+      <div style="font-size:28px;color:${won ? '#FFD700' : '#FF6B00'};font-weight:800;margin-bottom:8px;">${won ? 'Shandar!' : 'Game Over'}</div>
+      <div style="font-size:16px;margin-bottom:12px;">${this.score} / 8 kanche out</div>
+      <div style="font-size:14px;color:#FFD700;">Tap to play again</div>
+    </div>`;
+    this.overlay.onclick = () => { this.overlay.onclick = null; this.reset(); this.hideOverlay(); };
   },
+
+  hideOverlay() { this.overlay.innerHTML = ''; this.overlay.onclick = null; },
+
+  draw() { if (this.renderer) this.renderer.render(this.scene, this.camera); },
 
   loop() {
     this.update();
@@ -648,19 +433,25 @@ const KanchaGame = {
 
   destroy() {
     if (this.animationId) cancelAnimationFrame(this.animationId);
-    if (this.restartHandler) {
-      this.canvas.removeEventListener('click', this.restartHandler);
-      this.canvas.removeEventListener('touchstart', this.restartHandler);
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+      });
     }
-    this.canvas.removeEventListener('mousedown', this._onDown);
-    this.canvas.removeEventListener('mousemove', this._onMove);
-    this.canvas.removeEventListener('mouseup', this._onUp);
-    this.canvas.removeEventListener('touchstart', this._onTouchDown);
-    this.canvas.removeEventListener('touchmove', this._onTouchMove);
-    this.canvas.removeEventListener('touchend', this._onTouchUp);
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+    this.scene = null; this.camera = null; this.renderer = null;
+    this.marbles = []; this.particles = [];
+    this.ready = false;
   },
 
   getControls() {
-    return 'Drag from the orange marble to aim and set power, then release to flick! Knock all marbles out of the circle.';
+    return 'Drag from the orange marble to aim and set power, then release to flick. Knock all 8 marbles out of the chalk circle!';
   }
 };

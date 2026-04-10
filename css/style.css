@@ -1,0 +1,346 @@
+/* === Reset & Base === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #fdf6ec;
+  color: #3b2f1e;
+  font-family: 'Segoe UI', 'Noto Sans', Arial, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Warm earthy texture background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(255, 153, 51, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(19, 136, 8, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(255, 119, 0, 0.05) 0%, transparent 50%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* === Screens === */
+.screen {
+  display: none;
+  padding: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.screen.active {
+  display: block;
+}
+
+/* === Header / Title === */
+header {
+  text-align: center;
+  padding: 30px 0 10px;
+}
+
+.title {
+  font-size: 2.8rem;
+  font-weight: 900;
+  color: #e65100;
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.08);
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 1.15rem;
+  color: #6d4c22;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* === Marquee === */
+.marquee-wrap {
+  overflow: hidden;
+  background: linear-gradient(90deg, #ff9933, #ff6600, #ff9933);
+  margin: 20px 0;
+  padding: 10px 0;
+  border-radius: 4px;
+}
+
+.marquee {
+  white-space: nowrap;
+  animation: scroll-left 18s linear infinite;
+  color: #fff;
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+@keyframes scroll-left {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* === Game Grid === */
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.game-card {
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.game-card:hover {
+  transform: translateY(-6px) scale(1.02);
+}
+
+.game-card-inner {
+  background: #fff;
+  border: 2px solid #e0d5c3;
+  border-radius: 14px;
+  padding: 28px 18px 22px;
+  text-align: center;
+  height: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.game-card:hover .game-card-inner {
+  border-color: #ff9933;
+  box-shadow:
+    0 6px 24px rgba(255, 102, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.game-icon {
+  font-size: 3rem;
+  margin-bottom: 8px;
+}
+
+.game-card h2 {
+  color: #e65100;
+  font-size: 1.3rem;
+  margin-bottom: 2px;
+  font-weight: 800;
+}
+
+.game-card-hindi {
+  color: #999;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.game-card p {
+  font-size: 0.82rem;
+  color: #777;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #ff9933, #e65100);
+  color: #fff;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* === Game Screen === */
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 15px;
+  border-bottom: 2px solid #e0d5c3;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.game-header h2 {
+  color: #e65100;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.btn-retro {
+  background: #fff;
+  color: #e65100;
+  border: 2px solid #e65100;
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.btn-retro:hover {
+  background: #e65100;
+  color: #fff;
+}
+
+.btn-game {
+  background: linear-gradient(135deg, #ff9933, #e65100);
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.btn-game:hover {
+  opacity: 0.9;
+  transform: scale(1.03);
+}
+
+.score-display {
+  color: #e65100;
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
+#game-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+#game-container canvas {
+  border: 2px solid #d4c5a9;
+  border-radius: 8px;
+  display: block;
+  background: #f5efe3;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  touch-action: none;
+}
+
+.controls-info {
+  text-align: center;
+  margin-top: 15px;
+  color: #999;
+  font-size: 0.82rem;
+}
+
+/* === Lagori Specific === */
+.lagori-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.lagori-status {
+  font-size: 1rem;
+  color: #e65100;
+  font-weight: 700;
+  min-height: 1.5em;
+  text-align: center;
+}
+
+/* === Stapu Specific === */
+.stapu-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* === Lattu Specific === */
+.lattu-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.lattu-power-bar {
+  width: 200px;
+  height: 20px;
+  background: #e0d5c3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid #c4b89a;
+}
+
+.lattu-power-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ff9933, #e65100, #ff3300);
+  transition: width 0.05s;
+  border-radius: 8px;
+}
+
+/* === Footer === */
+footer {
+  text-align: center;
+  padding: 30px 0 20px;
+  border-top: 1px solid #e0d5c3;
+  margin-top: 30px;
+}
+
+footer p {
+  color: #999;
+  font-size: 0.82rem;
+  margin-bottom: 5px;
+}
+
+.retro-text {
+  color: #bbb;
+  font-style: italic;
+}
+
+/* === Responsive === */
+@media (max-width: 600px) {
+  .title {
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  .game-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .game-card-inner {
+    padding: 18px 10px 16px;
+  }
+
+  .game-icon {
+    font-size: 2rem;
+  }
+
+  .game-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #game-container canvas {
+    max-width: calc(100vw - 40px);
+  }
+}

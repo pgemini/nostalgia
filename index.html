@@ -4,13 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Bachpan ke Games - Play classic Indian 90s childhood street games online. Kancha (Marbles), Lagori (Seven Stones), Stapu (Hopscotch), Lattu (Top Spinning). Relive your gully memories!">
-  <meta name="keywords" content="Indian childhood games, 90s games India, Kancha, Lagori, Stapu, Lattu, marbles, seven stones, hopscotch, top spinning, nostalgic games, bachpan, gully games">
+  <meta name="keywords" content="Indian childhood games, 90s games India, Kancha, Lagori, Stapu, Lattu, marbles, seven stones, hopscotch, top spinning, nostalgic games, bachpan, gully games, desi games">
   <meta name="author" content="Bachpan ke Games">
   <meta name="theme-color" content="#FF6B00">
   <meta property="og:title" content="Bachpan ke Games - 90s Indian Childhood Games">
   <meta property="og:description" content="Relive your childhood! Play Kancha, Lagori, Stapu, Lattu and more classic Indian street games online.">
   <meta property="og:type" content="website">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+  <meta name="robots" content="index, follow">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪀</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -21,75 +22,78 @@
   <div id="app">
     <!-- Landing Page -->
     <div id="landing" class="screen active">
-      <header>
+      <header class="hero">
         <div class="header-decoration" aria-hidden="true"></div>
         <h1 class="title">Bachpan ke Games</h1>
         <p class="subtitle">पता हम बचपन में क्या खेलते थे?</p>
         <p class="subtitle-en">Remember what we used to play as kids?</p>
         <div class="marquee-wrap">
           <div class="marquee-track">
-            <p class="marquee">&#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733;</p>
+            <span class="marquee">&#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733;</span>
+            <span class="marquee" aria-hidden="true">&#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733; Woh gully, woh dost, woh games... Ab dobara khelo! &#9733; वो गली, वो दोस्त, वो खेल... अब दोबारा खेलो! &#9733;</span>
           </div>
         </div>
       </header>
 
-      <div class="game-grid">
-        <div class="game-card" data-game="kancha" style="--card-index: 0; --card-accent: #E74C3C;">
-          <div class="game-card-inner">
-            <div class="game-icon" aria-hidden="true">&#x1F534;</div>
-            <h2>Kancha</h2>
-            <p class="game-card-hindi">कंचे</p>
-            <p class="game-card-desc">Aim your marble and flick! Knock out as many kanchas as you can from the circle.</p>
-            <span class="badge badge-red">Marbles</span>
-            <div class="how-to-play">
-              <span class="how-to-play-icon" aria-label="How to play">?</span>
-              <div class="how-to-play-tooltip">Click to aim and flick your marble. Try to knock opponent marbles out of the ring!</div>
+      <section class="games-section" aria-label="Choose a game">
+        <div class="game-grid">
+          <div class="game-card" data-game="kancha" style="--card-index: 0; --card-accent: #E74C3C;">
+            <div class="game-card-inner">
+              <div class="game-icon" aria-hidden="true">&#x1F534;</div>
+              <h2>Kancha</h2>
+              <p class="game-card-hindi">कंचे</p>
+              <p class="game-card-desc">Aim your marble and flick! Knock out as many kanchas as you can from the circle.</p>
+              <span class="badge badge-red">Marbles</span>
+              <div class="how-to-play">
+                <span class="how-to-play-icon" aria-label="How to play" tabindex="0">?</span>
+                <div class="how-to-play-tooltip">Click to aim and flick your marble. Try to knock opponent marbles out of the ring!</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="game-card" data-game="lagori" style="--card-index: 1; --card-accent: #2E86C1;">
-          <div class="game-card-inner">
-            <div class="game-icon" aria-hidden="true">&#x1FAA8;</div>
-            <h2>Lagori</h2>
-            <p class="game-card-hindi">लगोरी / सात पत्थर</p>
-            <p class="game-card-desc">Throw the ball, knock the seven stones, and rebuild the pile before you get hit!</p>
-            <span class="badge badge-blue">Seven Stones</span>
-            <div class="how-to-play">
-              <span class="how-to-play-icon" aria-label="How to play">?</span>
-              <div class="how-to-play-tooltip">Aim and throw the ball to topple stones. Then stack them back before the timer runs out!</div>
+          <div class="game-card" data-game="lagori" style="--card-index: 1; --card-accent: #2E86C1;">
+            <div class="game-card-inner">
+              <div class="game-icon" aria-hidden="true">&#x1FAA8;</div>
+              <h2>Lagori</h2>
+              <p class="game-card-hindi">लगोरी / सात पत्थर</p>
+              <p class="game-card-desc">Throw the ball, knock the seven stones, and rebuild the pile before you get hit!</p>
+              <span class="badge badge-blue">Seven Stones</span>
+              <div class="how-to-play">
+                <span class="how-to-play-icon" aria-label="How to play" tabindex="0">?</span>
+                <div class="how-to-play-tooltip">Aim and throw the ball to topple stones. Then stack them back before the timer runs out!</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="game-card" data-game="stapu" style="--card-index: 2; --card-accent: #27AE60;">
-          <div class="game-card-inner">
-            <div class="game-icon" aria-hidden="true">&#x1F45F;</div>
-            <h2>Stapu</h2>
-            <p class="game-card-hindi">स्टापू / कित्थ-कित्थ</p>
-            <p class="game-card-desc">Hop through the squares with perfect timing! Don't step on the lines.</p>
-            <span class="badge badge-green">Hopscotch</span>
-            <div class="how-to-play">
-              <span class="how-to-play-icon" aria-label="How to play">?</span>
-              <div class="how-to-play-tooltip">Toss the stone and hop through numbered squares. Land perfectly to score points!</div>
+          <div class="game-card" data-game="stapu" style="--card-index: 2; --card-accent: #27AE60;">
+            <div class="game-card-inner">
+              <div class="game-icon" aria-hidden="true">&#x1F45F;</div>
+              <h2>Stapu</h2>
+              <p class="game-card-hindi">स्टापू / कित्थ-कित्थ</p>
+              <p class="game-card-desc">Hop through the squares with perfect timing! Don't step on the lines.</p>
+              <span class="badge badge-green">Hopscotch</span>
+              <div class="how-to-play">
+                <span class="how-to-play-icon" aria-label="How to play" tabindex="0">?</span>
+                <div class="how-to-play-tooltip">Toss the stone and hop through numbered squares. Land perfectly to score points!</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="game-card" data-game="lattu" style="--card-index: 3; --card-accent: #F39C12;">
-          <div class="game-card-inner">
-            <div class="game-icon" aria-hidden="true">&#x1FA80;</div>
-            <h2>Lattu</h2>
-            <p class="game-card-hindi">लट्टू</p>
-            <p class="game-card-desc">Spin the top and keep it going! Master the art of the perfect spin.</p>
-            <span class="badge badge-gold">Top Spinning</span>
-            <div class="how-to-play">
-              <span class="how-to-play-icon" aria-label="How to play">?</span>
-              <div class="how-to-play-tooltip">Hold and release to spin the lattu. Control the power for the longest spin!</div>
+          <div class="game-card" data-game="lattu" style="--card-index: 3; --card-accent: #F39C12;">
+            <div class="game-card-inner">
+              <div class="game-icon" aria-hidden="true">&#x1FA80;</div>
+              <h2>Lattu</h2>
+              <p class="game-card-hindi">लट्टू</p>
+              <p class="game-card-desc">Spin the top and keep it going! Master the art of the perfect spin.</p>
+              <span class="badge badge-gold">Top Spinning</span>
+              <div class="how-to-play">
+                <span class="how-to-play-icon" aria-label="How to play" tabindex="0">?</span>
+                <div class="how-to-play-tooltip">Hold and release to spin the lattu. Control the power for the longest spin!</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <footer>
         <div class="rangoli-border" aria-hidden="true"></div>

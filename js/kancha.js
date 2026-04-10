@@ -314,6 +314,8 @@ const KanchaGame = {
                 ['#FFD700', '#FF6D00', '#E53935', '#43A047'][Math.floor(Math.random() * 4)]
               );
             }
+          } else {
+            if (window.Sounds) Sounds.fail();
           }
           this.setupRestart();
         } else {

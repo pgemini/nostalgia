@@ -117,6 +117,7 @@ const AtyaPatyaGame = {
         for (const z of this.zones) z.crossed = false;
       } else {
         this.state = 'gameover';
+        if (window.Sounds) Sounds.fail();
       }
       return;
     }

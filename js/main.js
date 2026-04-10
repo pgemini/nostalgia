@@ -1,4 +1,18 @@
 // Main app - Navigation and game switching
+window.addEventListener('error', function (e) {
+  const msg = `${e.message} @ ${e.filename}:${e.lineno}`;
+  console.error('Game error:', msg);
+  // Show error on screen for debugging
+  let box = document.getElementById('error-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'error-box';
+    box.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;background:#c62828;color:#fff;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;z-index:9999;max-height:30vh;overflow:auto;';
+    document.body.appendChild(box);
+  }
+  box.textContent = 'Error: ' + msg;
+});
+
 (function () {
   const landing = document.getElementById('landing');
   const gameScreen = document.getElementById('game-screen');

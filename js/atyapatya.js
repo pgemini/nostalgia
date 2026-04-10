@@ -1,414 +1,416 @@
-// Atya Patya - 3D with Three.js
+// Atya Patya - Navigate through zones avoiding defenders
 const AtyaPatyaGame = {
-  scene: null, camera: null, renderer: null,
-  container: null, wrapper: null, overlay: null,
-  width: 0, height: 0,
-  player: null, defenders: [], zones: [],
+  canvas: null, ctx: null, width: 400, height: 500, dpr: 1,
+  state: 'ready', // ready, playing, caught, won, gameover
+  player: null,
+  defenders: [],
+  zones: [], // horizontal bands
   score: 0, level: 1, lives: 3,
-  state: 'ready',
-  targetX: 0, targetZ: 0,
   animationId: null, onScoreUpdate: null,
-  clock: null, ready: false, particles: [],
-  goalZ: 0, startZ: 0,
+  particles: [], floatingTexts: [],
+  goalY: 0,
 
   init(container, onScoreUpdate) {
-    this.container = container;
     this.onScoreUpdate = onScoreUpdate;
-    this.width = Math.min(500, window.innerWidth - 40);
-    this.height = Math.round(this.width * 1.2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.width = Math.min(400, window.innerWidth - 40);
+    this.height = Math.round(this.width * 1.3);
 
-    this.wrapper = document.createElement('div');
-    this.wrapper.style.cssText = `position:relative;width:${this.width}px;height:${this.height}px;`;
-    container.appendChild(this.wrapper);
-    this.overlay = document.createElement('div');
-    this.overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:'Baloo 2',sans-serif;z-index:10;`;
-    this.wrapper.appendChild(this.overlay);
+    this.canvas = document.createElement('canvas');
+    this.canvas.style.width = this.width + 'px';
+    this.canvas.style.height = this.height + 'px';
+    this.canvas.width = this.width * this.dpr;
+    this.canvas.height = this.height * this.dpr;
+    container.appendChild(this.canvas);
+    this.ctx = this.canvas.getContext('2d');
+    this.ctx.scale(this.dpr, this.dpr);
 
-    if (typeof THREE === 'undefined') {
-      this.overlay.innerHTML = '<div style="color:#e65100;background:rgba(255,255,255,0.9);padding:20px;border-radius:10px;">Loading 3D engine...</div>';
-      const wait = () => { if (typeof THREE !== 'undefined') this.setup(); else setTimeout(wait, 100); };
-      wait();
-      return;
-    }
-    this.setup();
-  },
+    this._onDown = (e) => { e.preventDefault(); this.handleDown(e.touches ? e.touches[0] : e); };
+    this._onMove = (e) => { e.preventDefault(); this.handleMove(e.touches ? e.touches[0] : e); };
+    this.canvas.addEventListener('mousedown', this._onDown);
+    this.canvas.addEventListener('mousemove', this._onMove);
+    this.canvas.addEventListener('touchstart', this._onDown, { passive: false });
+    this.canvas.addEventListener('touchmove', this._onMove, { passive: false });
 
-  setup() {
-    this.overlay.innerHTML = '';
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xFFE0A0);
-    this.scene.fog = new THREE.Fog(0xFFE0A0, 12, 40);
-
-    this.camera = new THREE.PerspectiveCamera(55, this.width / this.height, 0.1, 60);
-    this.camera.position.set(0, 9, 6);
-    this.camera.lookAt(0, 0, -1);
-
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(this.width, this.height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.domElement.style.cssText = 'display:block;border-radius:12px;touch-action:none;';
-    this.wrapper.appendChild(this.renderer.domElement);
-
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const sun = new THREE.DirectionalLight(0xFFF2D4, 1);
-    sun.position.set(-4, 12, 5);
-    sun.castShadow = true;
-    sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
-    sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
-    sun.shadow.mapSize.width = 1024; sun.shadow.mapSize.height = 1024;
-    this.scene.add(sun);
-
-    // Ground
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, 30),
-      new THREE.MeshStandardMaterial({ color: 0xD4B880 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-
-    // Start zone (orange tint)
-    this.startZ = 5;
-    const startZone = new THREE.Mesh(
-      new THREE.PlaneGeometry(10, 2),
-      new THREE.MeshStandardMaterial({ color: 0xFF9966, transparent: true, opacity: 0.5 })
-    );
-    startZone.rotation.x = -Math.PI / 2;
-    startZone.position.set(0, 0.01, this.startZ);
-    this.scene.add(startZone);
-
-    // Goal zone (green tint)
-    this.goalZ = -7;
-    const goalZone = new THREE.Mesh(
-      new THREE.PlaneGeometry(10, 2),
-      new THREE.MeshStandardMaterial({ color: 0x66CC66, transparent: true, opacity: 0.6, emissive: 0x339933, emissiveIntensity: 0.3 })
-    );
-    goalZone.rotation.x = -Math.PI / 2;
-    goalZone.position.set(0, 0.01, this.goalZ);
-    this.scene.add(goalZone);
-
-    // Zone lines (chalk)
-    for (let i = 0; i < 5; i++) {
-      const z = 3 - i * 2;
-      const line = new THREE.Mesh(
-        new THREE.PlaneGeometry(10, 0.1),
-        new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.8 })
-      );
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(0, 0.02, z);
-      this.scene.add(line);
-      this.zones.push({ z, crossed: false });
-    }
-
-    this.createPlayer();
-    this.setupLevel();
-    this.setupEvents();
-    this.clock = new THREE.Clock();
-    this.ready = true;
+    this.reset();
     this.loop();
-    this.showReadyScreen();
   },
 
-  createPlayer() {
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.55, 0.25),
-      new THREE.MeshStandardMaterial({ color: 0xFF6B00 })
-    );
-    body.position.y = 0.6; body.castShadow = true;
-    group.add(body);
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xF4C88C })
-    );
-    head.position.y = 1;
-    group.add(head);
-    const hair = new THREE.Mesh(
-      new THREE.SphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI / 1.8),
-      new THREE.MeshStandardMaterial({ color: 0x1A0F08 })
-    );
-    hair.position.y = 1.02;
-    group.add(hair);
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x1565C0 });
-    const ll = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), legMat);
-    ll.position.set(-0.09, 0.2, 0);
-    group.add(ll); group.leftLeg = ll;
-    const rl = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), legMat);
-    rl.position.set(0.09, 0.2, 0);
-    group.add(rl); group.rightLeg = rl;
-    group.position.set(0, 0, this.startZ);
-    this.player = group;
-    this.scene.add(group);
-  },
-
-  makeDefender(x, z, patrolSpeed) {
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.55, 0.25),
-      new THREE.MeshStandardMaterial({ color: 0xC62828 })
-    );
-    body.position.y = 0.6; body.castShadow = true;
-    group.add(body);
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xF4C88C })
-    );
-    head.position.y = 1;
-    group.add(head);
-    const hair = new THREE.Mesh(
-      new THREE.SphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI / 1.8),
-      new THREE.MeshStandardMaterial({ color: 0x1A0F08 })
-    );
-    hair.position.y = 1.02;
-    group.add(hair);
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x424242 });
-    const ll = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), legMat);
-    ll.position.set(-0.09, 0.2, 0);
-    group.add(ll); group.leftLeg = ll;
-    const rl = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), legMat);
-    rl.position.set(0.09, 0.2, 0);
-    group.add(rl); group.rightLeg = rl;
-    group.position.set(x, 0, z);
-    group.userData = { vx: patrolSpeed };
-    this.scene.add(group);
-    return group;
+  reset() {
+    this.state = 'ready';
+    this.score = 0;
+    this.level = 1;
+    this.lives = 3;
+    this.particles = [];
+    this.floatingTexts = [];
+    this.setupLevel();
   },
 
   setupLevel() {
-    // Remove old defenders
-    for (const d of this.defenders) this.scene.remove(d);
+    this.state = 'ready';
+    // 5 zones (lines), player must cross all
+    const numZones = 5;
+    const zoneH = (this.height * 0.8) / numZones;
+    this.zones = [];
+    for (let i = 0; i < numZones; i++) {
+      this.zones.push({
+        y: this.height * 0.1 + i * zoneH,
+        height: zoneH,
+        crossed: false
+      });
+    }
+    this.goalY = this.height * 0.1;
+
+    this.player = {
+      x: this.width / 2,
+      y: this.height - 50,
+      radius: this.width * 0.035,
+      targetX: this.width / 2,
+      targetY: this.height - 50
+    };
+
+    // Defenders patrol horizontally in each zone
     this.defenders = [];
-
-    // Reset zones
-    for (const z of this.zones) z.crossed = false;
-
-    // Player back to start
-    this.player.position.set(0, 0, this.startZ);
-    this.targetX = 0;
-    this.targetZ = this.startZ;
-
-    // Spawn defenders in each zone
-    const speedBase = 1.5 + this.level * 0.3;
-    for (let i = 0; i < this.zones.length; i++) {
-      const z = this.zones[i].z - 1; // between lines
-      const dir = (i % 2 === 0) ? 1 : -1;
-      const startX = dir === 1 ? -4 : 4;
-      this.defenders.push(this.makeDefender(startX, z, speedBase * dir));
-      // Extra defender on higher levels
-      if (this.level >= 2 && i % 2 === 0) {
-        this.defenders.push(this.makeDefender(0, z, -speedBase * dir));
+    const defenderSpeed = 1.5 + this.level * 0.4;
+    for (let i = 0; i < numZones; i++) {
+      const zone = this.zones[i];
+      this.defenders.push({
+        x: (i % 2 === 0) ? 50 : this.width - 50,
+        y: zone.y + zone.height / 2,
+        vx: (i % 2 === 0) ? defenderSpeed : -defenderSpeed,
+        radius: this.width * 0.04,
+        zoneIdx: i
+      });
+      // Add extra defender on higher levels
+      if (this.level >= 2 && i % 2 === 1) {
+        this.defenders.push({
+          x: this.width / 2,
+          y: zone.y + zone.height / 2,
+          vx: defenderSpeed * 0.8,
+          radius: this.width * 0.04,
+          zoneIdx: i
+        });
       }
     }
+
     this.updateScore();
   },
 
-  setupEvents() {
-    this._onDown = (e) => { e.preventDefault(); this.handleDown(e); };
-    this._onMove = (e) => { e.preventDefault(); this.handleMove(e); };
-    const el = this.renderer.domElement;
-    el.addEventListener('mousedown', this._onDown);
-    el.addEventListener('mousemove', this._onMove);
-    el.addEventListener('touchstart', this._onDown, { passive: false });
-    el.addEventListener('touchmove', this._onMove, { passive: false });
-  },
-
-  getPos(e) {
-    const t = (e.touches && e.touches.length) ? e.touches[0]
-           : (e.changedTouches && e.changedTouches.length) ? e.changedTouches[0] : e;
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const nx = ((t.clientX - rect.left) / rect.width) * 2 - 1;
-    const ny = -((t.clientY - rect.top) / rect.height) * 2 + 1;
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera({ x: nx, y: ny }, this.camera);
-    const intersect = new THREE.Vector3();
-    raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), intersect);
-    return { x: intersect.x, z: intersect.z };
+  getCanvasPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * (this.width / rect.width), y: (e.clientY - rect.top) * (this.height / rect.height) };
   },
 
   handleDown(e) {
     if (this.state === 'ready') {
       this.state = 'playing';
-      this.hideOverlay();
-      if (window.Sounds) Sounds.pop();
+      Sounds.pop();
       return;
     }
     if (this.state === 'caught') {
-      if (this.lives > 0) { this.state = 'playing'; this.setupLevel(); this.hideOverlay(); }
-      else { this.state = 'gameover'; this.showGameOver(false); }
+      if (this.lives > 0) {
+        this.state = 'playing';
+        this.player.x = this.width / 2;
+        this.player.y = this.height - 50;
+        this.player.targetX = this.player.x;
+        this.player.targetY = this.player.y;
+        for (const z of this.zones) z.crossed = false;
+      } else {
+        this.state = 'gameover';
+      }
       return;
     }
     if (this.state === 'won') {
       this.level++;
       this.setupLevel();
-      this.state = 'ready';
-      this.showReadyScreen();
+      Sounds.success();
       return;
     }
-    if (this.state === 'gameover') { this.reset(); this.hideOverlay(); return; }
+    if (this.state === 'gameover') {
+      this.reset();
+      return;
+    }
     if (this.state === 'playing') {
-      const pos = this.getPos(e);
-      this.targetX = Math.max(-4.5, Math.min(4.5, pos.x));
-      this.targetZ = Math.max(this.goalZ, Math.min(this.startZ, pos.z));
+      const pos = this.getCanvasPos(e);
+      this.player.targetX = pos.x;
+      this.player.targetY = pos.y;
     }
   },
 
   handleMove(e) {
     if (this.state !== 'playing') return;
-    const pos = this.getPos(e);
-    this.targetX = Math.max(-4.5, Math.min(4.5, pos.x));
-    this.targetZ = Math.max(this.goalZ, Math.min(this.startZ, pos.z));
-  },
-
-  reset() {
-    this.score = 0;
-    this.level = 1;
-    this.lives = 3;
-    this.state = 'ready';
-    this.setupLevel();
-    this.showReadyScreen();
+    const pos = this.getCanvasPos(e);
+    this.player.targetX = pos.x;
+    this.player.targetY = pos.y;
   },
 
   updateScore() {
-    if (this.onScoreUpdate) this.onScoreUpdate(`Level ${this.level}  |  Score: ${this.score}  |  ${'❤'.repeat(this.lives)}`);
+    if (this.onScoreUpdate) {
+      this.onScoreUpdate(`Level ${this.level}  |  Score: ${this.score}  |  ${'❤'.repeat(this.lives)}`);
+    }
+  },
+
+  addFloat(x, y, text, color) {
+    this.floatingTexts.push({ x, y, text, color, life: 1, vy: -1.5 });
   },
 
   update() {
-    if (!this.ready) return;
-    const dt = Math.min(0.05, this.clock.getDelta());
-
     // Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      p.mesh.position.x += p.vx * dt;
-      p.mesh.position.y += p.vy * dt;
-      p.mesh.position.z += p.vz * dt;
-      p.vy -= 9 * dt;
-      p.life -= dt;
-      p.mesh.material.opacity = Math.max(0, p.life);
-      if (p.life <= 0) {
-        this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        p.mesh.material.dispose();
-        this.particles.splice(i, 1);
-      }
+      p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.y += ft.vy; ft.life -= 0.015;
+      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
     }
 
     if (this.state !== 'playing') return;
 
-    // Smooth player movement
-    this.player.position.x += (this.targetX - this.player.position.x) * 5 * dt;
-    this.player.position.z += (this.targetZ - this.player.position.z) * 5 * dt;
-
-    // Running animation
-    const runPhase = Date.now() * 0.015;
-    if (this.player.leftLeg) {
-      this.player.leftLeg.rotation.x = Math.sin(runPhase) * 0.6;
-      this.player.rightLeg.rotation.x = Math.sin(runPhase + Math.PI) * 0.6;
-    }
+    // Smoothly move player to target
+    this.player.x += (this.player.targetX - this.player.x) * 0.2;
+    this.player.y += (this.player.targetY - this.player.y) * 0.2;
+    this.player.x = Math.max(this.player.radius, Math.min(this.width - this.player.radius, this.player.x));
+    this.player.y = Math.max(this.player.radius, Math.min(this.height - this.player.radius, this.player.y));
 
     // Update defenders
     for (const d of this.defenders) {
-      d.position.x += d.userData.vx * dt;
-      if (d.position.x < -4.5) { d.position.x = -4.5; d.userData.vx *= -1; }
-      if (d.position.x > 4.5) { d.position.x = 4.5; d.userData.vx *= -1; }
-      // Running
-      d.leftLeg.rotation.x = Math.sin(runPhase * 1.3) * 0.5;
-      d.rightLeg.rotation.x = Math.sin(runPhase * 1.3 + Math.PI) * 0.5;
-      // Face direction
-      d.rotation.y = d.userData.vx > 0 ? Math.PI / 2 : -Math.PI / 2;
+      d.x += d.vx;
+      if (d.x < d.radius || d.x > this.width - d.radius) d.vx *= -1;
 
-      // Collision check
-      const dx = d.position.x - this.player.position.x;
-      const dz = d.position.z - this.player.position.z;
-      if (Math.sqrt(dx * dx + dz * dz) < 0.5) {
+      // Collision with player
+      const dx = d.x - this.player.x;
+      const dy = d.y - this.player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < d.radius + this.player.radius) {
         this.lives--;
-        if (window.Sounds) Sounds.tag();
-        // Burst
+        Sounds.tag();
+        this.addFloat(this.player.x, this.player.y - 20, 'Out!', '#E53935');
         for (let k = 0; k < 12; k++) {
-          const p = new THREE.Mesh(
-            new THREE.SphereGeometry(0.06, 4, 4),
-            new THREE.MeshBasicMaterial({ color: 0xE53935, transparent: true, opacity: 1 })
-          );
-          p.position.set(this.player.position.x, 0.5, this.player.position.z);
           const a = Math.random() * Math.PI * 2;
-          this.scene.add(p);
           this.particles.push({
-            mesh: p,
-            vx: Math.cos(a) * 3, vy: Math.random() * 2, vz: Math.sin(a) * 3,
-            life: 1
+            x: this.player.x, y: this.player.y,
+            vx: Math.cos(a) * 3, vy: Math.sin(a) * 3,
+            life: 1, decay: 0.03,
+            radius: 2, color: '#E53935'
           });
         }
         this.state = 'caught';
-        if (this.lives <= 0) {
-          this.state = 'gameover';
-          if (window.Sounds) Sounds.fail();
-          this.showGameOver(false);
-        } else {
-          this.showCaught();
-        }
+        this.updateScore();
         return;
       }
     }
 
-    // Zone crossings
+    // Check zone crossing
     for (const z of this.zones) {
-      if (!z.crossed && this.player.position.z < z.z) {
+      if (!z.crossed && this.player.y < z.y + z.height / 2) {
         z.crossed = true;
         this.score += 10;
-        if (window.Sounds) Sounds.boost();
+        Sounds.boost();
+        this.addFloat(this.player.x, this.player.y - 15, '+10', '#43A047');
         this.updateScore();
       }
     }
 
     // Reached goal
-    if (this.player.position.z < this.goalZ + 1) {
+    if (this.player.y < this.goalY) {
       this.score += 50 * this.level;
       this.state = 'won';
-      if (window.Sounds) Sounds.success();
-      this.showGameOver(true);
+      Sounds.success();
+      this.addFloat(this.width / 2, this.height / 2, 'Jeet Gaye!', '#FFD700');
       this.updateScore();
     }
-
-    // Gentle camera follow
-    const targetCamZ = Math.max(-2, this.player.position.z + 5);
-    this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.04;
   },
 
-  showReadyScreen() {
-    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.65);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid #FFD700;max-width:85%;pointer-events:auto;cursor:pointer;">
-      <div style="font-size:24px;color:#FFD700;font-weight:800;margin-bottom:8px;">Level ${this.level}</div>
-      <div style="font-size:13px;margin-bottom:12px;line-height:1.5;">Drag to move. Reach the GREEN goal at the top!<br>Dodge the red defenders.</div>
-      <div style="font-size:14px;color:#FFD700;">Tap to start</div>
-    </div>`;
-    this.overlay.onclick = () => { this.overlay.onclick = null; this.state = 'playing'; this.hideOverlay(); if (window.Sounds) Sounds.pop(); };
+  draw() {
+    const ctx = this.ctx;
+
+    // Ground
+    const bg = ctx.createLinearGradient(0, 0, 0, this.height);
+    bg.addColorStop(0, '#d4b880');
+    bg.addColorStop(1, '#c49860');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    // Goal zone
+    ctx.fillStyle = 'rgba(67, 160, 71, 0.25)';
+    ctx.fillRect(0, 0, this.width, this.goalY);
+    ctx.strokeStyle = 'rgba(67, 160, 71, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, this.goalY);
+    ctx.lineTo(this.width, this.goalY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(67, 160, 71, 0.8)';
+    ctx.font = `bold ${this.width * 0.035}px Baloo 2, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('GOAL', this.width / 2, this.goalY - 10);
+
+    // Start zone
+    ctx.fillStyle = 'rgba(255, 152, 0, 0.15)';
+    ctx.fillRect(0, this.height - 60, this.width, 60);
+    ctx.fillStyle = 'rgba(255, 152, 0, 0.8)';
+    ctx.fillText('START', this.width / 2, this.height - 20);
+    ctx.textAlign = 'start';
+
+    // Zone lines
+    for (const z of this.zones) {
+      ctx.strokeStyle = z.crossed ? 'rgba(67, 160, 71, 0.4)' : 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, z.y);
+      ctx.lineTo(this.width, z.y);
+      ctx.stroke();
+    }
+
+    // Defenders
+    for (const d of this.defenders) {
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.beginPath();
+      ctx.ellipse(d.x + 2, d.y + 4, d.radius * 0.9, d.radius * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Body
+      ctx.fillStyle = '#C62828';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#7F0000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Face
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(d.x - d.radius * 0.25, d.y - d.radius * 0.15, d.radius * 0.15, 0, Math.PI * 2);
+      ctx.arc(d.x + d.radius * 0.25, d.y - d.radius * 0.15, d.radius * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(d.x - d.radius * 0.25 + (d.vx > 0 ? 1 : -1), d.y - d.radius * 0.15, d.radius * 0.08, 0, Math.PI * 2);
+      ctx.arc(d.x + d.radius * 0.25 + (d.vx > 0 ? 1 : -1), d.y - d.radius * 0.15, d.radius * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Motion indicator
+      ctx.strokeStyle = 'rgba(198, 40, 40, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(d.x - d.vx * 8, d.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.stroke();
+    }
+
+    // Player
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(this.player.x + 2, this.player.y + 4, this.player.radius, this.player.radius * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    const pgrad = ctx.createRadialGradient(this.player.x - 2, this.player.y - 3, 1, this.player.x, this.player.y, this.player.radius);
+    pgrad.addColorStop(0, '#FFB74D');
+    pgrad.addColorStop(1, '#E65100');
+    ctx.fillStyle = pgrad;
+    ctx.beginPath();
+    ctx.arc(this.player.x, this.player.y, this.player.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#BF360C';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Face
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(this.player.x - 3, this.player.y - 2, 2, 0, Math.PI * 2);
+    ctx.arc(this.player.x + 3, this.player.y - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(this.player.x - 3, this.player.y - 2, 1, 0, Math.PI * 2);
+    ctx.arc(this.player.x + 3, this.player.y - 2, 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Particles
+    for (const p of this.particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius || 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Floating texts
+    for (const ft of this.floatingTexts) {
+      ctx.globalAlpha = ft.life;
+      ctx.fillStyle = ft.color;
+      ctx.font = `bold ${this.width * 0.04}px Baloo 2, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.textAlign = 'start';
+      ctx.globalAlpha = 1;
+    }
+
+    // State overlays
+    if (this.state === 'ready') {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.fillStyle = '#FFD700';
+      ctx.font = `bold ${this.width * 0.07}px Baloo 2, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`Level ${this.level}`, this.width / 2, this.height / 2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${this.width * 0.035}px Poppins, sans-serif`;
+      ctx.fillText('Drag to move. Reach the goal!', this.width / 2, this.height / 2 + 15);
+      ctx.fillText('Tap to start', this.width / 2, this.height / 2 + 40);
+      ctx.textAlign = 'start';
+    }
+
+    if (this.state === 'caught') {
+      ctx.fillStyle = 'rgba(198, 40, 40, 0.3)';
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${this.width * 0.06}px Baloo 2, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Pakda Gaya!', this.width / 2, this.height / 2);
+      ctx.font = `${this.width * 0.03}px Poppins, sans-serif`;
+      ctx.fillText(this.lives > 0 ? 'Tap to retry' : 'Game Over', this.width / 2, this.height / 2 + 30);
+      ctx.textAlign = 'start';
+    }
+
+    if (this.state === 'won') {
+      ctx.fillStyle = 'rgba(67, 160, 71, 0.3)';
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.fillStyle = '#FFD700';
+      ctx.font = `bold ${this.width * 0.07}px Baloo 2, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Shabaash!', this.width / 2, this.height / 2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${this.width * 0.035}px Poppins, sans-serif`;
+      ctx.fillText('Tap for next level', this.width / 2, this.height / 2 + 20);
+      ctx.textAlign = 'start';
+    }
+
+    if (this.state === 'gameover') {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.fillStyle = '#FF6B00';
+      ctx.font = `bold ${this.width * 0.08}px Baloo 2, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Game Over', this.width / 2, this.height / 2 - 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${this.width * 0.04}px Poppins, sans-serif`;
+      ctx.fillText(`Score: ${this.score}`, this.width / 2, this.height / 2 + 15);
+      ctx.fillStyle = '#FFD700';
+      ctx.font = `${this.width * 0.03}px Poppins, sans-serif`;
+      ctx.fillText('Tap to play again', this.width / 2, this.height / 2 + 45);
+      ctx.textAlign = 'start';
+    }
   },
-
-  showCaught() {
-    this.overlay.innerHTML = `<div style="background:rgba(198,40,40,0.6);color:#fff;padding:20px 28px;border-radius:16px;text-align:center;pointer-events:auto;cursor:pointer;">
-      <div style="font-size:22px;font-weight:800;margin-bottom:6px;">Pakda Gaya!</div>
-      <div style="font-size:13px;">Tap to retry</div>
-    </div>`;
-    this.overlay.onclick = () => { this.overlay.onclick = null; this.state = 'playing'; this.setupLevel(); this.hideOverlay(); };
-  },
-
-  showGameOver(won) {
-    this.overlay.innerHTML = `<div style="background:rgba(0,0,0,0.7);color:#fff;padding:24px 32px;border-radius:16px;text-align:center;border:3px solid ${won ? '#FFD700' : '#FF6B00'};max-width:85%;pointer-events:auto;cursor:pointer;">
-      <div style="font-size:26px;color:${won ? '#FFD700' : '#FF6B00'};font-weight:800;margin-bottom:8px;">${won ? 'Shabaash!' : 'Game Over'}</div>
-      <div style="font-size:14px;margin-bottom:12px;">Score: ${this.score}</div>
-      <div style="font-size:13px;color:#FFD700;">Tap ${won ? 'for next level' : 'to play again'}</div>
-    </div>`;
-    this.overlay.onclick = () => {
-      this.overlay.onclick = null;
-      if (won) { this.level++; this.setupLevel(); this.state = 'ready'; this.showReadyScreen(); }
-      else { this.reset(); this.hideOverlay(); }
-    };
-  },
-
-  hideOverlay() { this.overlay.innerHTML = ''; this.overlay.onclick = null; },
-
-  draw() { if (this.renderer) this.renderer.render(this.scene, this.camera); },
 
   loop() {
     this.update();
@@ -418,24 +420,13 @@ const AtyaPatyaGame = {
 
   destroy() {
     if (this.animationId) cancelAnimationFrame(this.animationId);
-    if (this.scene) {
-      this.scene.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-    }
-    if (this.renderer) {
-      this.renderer.dispose();
-      if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
-    }
-    this.scene = null; this.camera = null; this.renderer = null;
-    this.ready = false;
+    this.canvas.removeEventListener('mousedown', this._onDown);
+    this.canvas.removeEventListener('mousemove', this._onMove);
+    this.canvas.removeEventListener('touchstart', this._onDown);
+    this.canvas.removeEventListener('touchmove', this._onMove);
   },
 
   getControls() {
-    return 'Drag your player through the zones to reach the green goal at the top. Avoid the patrolling red defenders!'
+    return 'Drag your player through the zones to reach the goal at the top. Avoid the patrolling defenders at all costs!';
   }
 };

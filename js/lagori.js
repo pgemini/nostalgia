@@ -111,6 +111,7 @@ const LagoriGame = {
             this.score += 10;
             this.spawnParticles(s.x, s.y, 6, '#43A047');
             this.addFloat(s.x, s.y - 15, '+10', '#43A047');
+            if (window.Sounds) Sounds.collect();
             this.updateScore();
 
             if (this.rebuiltCount >= this.totalStones) {
@@ -118,6 +119,7 @@ const LagoriGame = {
               const bonus = 50 * this.level;
               this.score += bonus;
               this.addFloat(this.width / 2, this.height / 2 - 40, `+${bonus} Bonus!`, '#FFD700');
+              if (window.Sounds) Sounds.success();
               this.updateScore();
               setTimeout(() => {
                 this.level++;
@@ -155,6 +157,7 @@ const LagoriGame = {
       this.ball.vy = Math.sin(angle) * power;
       this.ball.active = true;
       this.state = 'throwing';
+      if (window.Sounds) Sounds.whoosh();
     }
     this.aimEnd = null;
   },
@@ -211,6 +214,7 @@ const LagoriGame = {
       if (hitAny) {
         this.shakeAmount = 6;
         this.spawnParticles(this.width / 2, this.height * 0.38, 15, '#c4a46a');
+        if (window.Sounds) Sounds.thud();
         for (const s of this.stones) {
           s.stacked = false; s.scattered = true;
           s.vx = (Math.random() - 0.5) * 8;
@@ -257,6 +261,7 @@ const LagoriGame = {
           this.shakeAmount = 8;
           this.spawnParticles(this.player.x, this.player.y, 10, '#E53935');
           this.addFloat(this.player.x, this.player.y - 30, 'OUT!', '#E53935');
+          if (window.Sounds) Sounds.fail();
           this.updateScore();
           this.enemyBall = null;
           if (this.lives <= 0) { this.state = 'gameover'; }

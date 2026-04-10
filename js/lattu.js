@@ -74,6 +74,7 @@ const LattuGame = {
     if (this.state === 'winding' && this.windPower > 20) {
       this.state = 'spinning';
       this.spinSpeed = this.windPower;
+      if (window.Sounds) Sounds.spin();
     }
   },
 
@@ -209,9 +210,11 @@ const LattuGame = {
         if (b.type === 'spin') {
           this.spinSpeed = Math.min(100, this.spinSpeed + 20);
           this.addFloat(b.x, b.y - 15, '+Spin!', '#43A047');
+          if (window.Sounds) Sounds.boost();
         } else {
           this.score += 25;
           this.addFloat(b.x, b.y - 15, '+25', '#FFD700');
+          if (window.Sounds) Sounds.coin();
         }
         this.spawnParticles(b.x, b.y, 8, b.type === 'spin' ? '#43A047' : '#FFD700');
         this.boosts.splice(i, 1);
@@ -229,6 +232,7 @@ const LattuGame = {
         this.spinSpeed = Math.max(0, this.spinSpeed - 25);
         this.spawnParticles(o.x, o.y, 10, '#E53935');
         this.addFloat(o.x, o.y - 15, '-Spin!', '#E53935');
+        if (window.Sounds) Sounds.hit();
         this.obstacles.splice(i, 1);
         this.updateScore();
       }
@@ -238,6 +242,7 @@ const LattuGame = {
     if (this.spinSpeed <= 0) {
       this.spinSpeed = 0;
       this.state = 'gameover';
+      if (window.Sounds) Sounds.fail();
       this.updateScore();
     }
   },

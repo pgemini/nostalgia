@@ -73,7 +73,9 @@ const StapuGame = {
       this.hopDirection = 1;
       this.balanceBar = 50;
       this.balanceDrift = (Math.random() - 0.5) * (1 + this.currentRound * 0.3);
+      if (window.Sounds) Sounds.whoosh();
     } else if (this.state === 'hopping') {
+      if (window.Sounds) Sounds.jump();
       this.hop();
     } else if (this.state === 'landed') {
       this.currentRound++;
@@ -104,14 +106,17 @@ const StapuGame = {
         if (this.balanceBar < 20 || this.balanceBar > 80) {
           this.state = 'gameover';
           this.spawnDust(this.squares[this.playerPos + 1].x, this.squares[this.playerPos + 1].y, 12);
+          if (window.Sounds) Sounds.fail();
           return;
         }
         this.score += 10 + this.currentRound * 5;
+        if (window.Sounds) Sounds.collect();
         this.updateScore();
         this.playerPos--;
       }
       if (this.playerPos < 0) {
         this.state = 'landed';
+        if (window.Sounds) Sounds.success();
         return;
       }
     }

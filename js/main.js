@@ -11,10 +11,14 @@
   let currentGame = null;
 
   const games = {
-    kancha: { name: 'Kancha (Marbles)', obj: KanchaGame },
-    lagori: { name: 'Lagori (Seven Stones)', obj: LagoriGame },
-    stapu: { name: 'Stapu (Hopscotch)', obj: StapuGame },
-    lattu: { name: 'Lattu (Top Spinning)', obj: LattuGame },
+    kancha: { name: 'Kancha (Marbles)', obj: () => KanchaGame },
+    lagori: { name: 'Lagori (Seven Stones)', obj: () => LagoriGame },
+    stapu: { name: 'Stapu (Hopscotch)', obj: () => StapuGame },
+    lattu: { name: 'Lattu (Top Spinning)', obj: () => LattuGame },
+    tyre: { name: 'Taayra (Tyre Rolling)', obj: () => TyreGame },
+    gillidanda: { name: 'Gilli Danda', obj: () => GilliDandaGame },
+    atyapatya: { name: 'Atya Patya', obj: () => AtyaPatyaGame },
+    rumaal: { name: 'Rumaal Jhapatta', obj: () => RumaalGame },
   };
 
   function showScreen(id) {
@@ -27,7 +31,9 @@
     const game = games[gameId];
     if (!game) return;
 
-    // Clean up previous game
+    // Initialize sound on user interaction
+    if (window.Sounds) Sounds.init();
+
     if (currentGame) {
       currentGame.destroy();
       currentGame = null;
@@ -38,14 +44,14 @@
     gameTitle.textContent = game.name;
     showScreen('game-screen');
 
-    game.obj.init(gameContainer, (scoreText) => {
+    const gameObj = game.obj();
+    gameObj.init(gameContainer, (scoreText) => {
       gameScore.textContent = scoreText;
     });
 
-    gameControls.textContent = game.obj.getControls();
-    currentGame = game.obj;
+    gameControls.textContent = gameObj.getControls();
+    currentGame = gameObj;
 
-    // Scroll to top
     window.scrollTo(0, 0);
   }
 
@@ -60,12 +66,33 @@
     showScreen('landing');
   }
 
+  // Sound toggle button
+  const soundBtn = document.createElement('button');
+  soundBtn.id = 'sound-toggle';
+  soundBtn.className = 'sound-toggle';
+  soundBtn.setAttribute('aria-label', 'Toggle sound');
+  soundBtn.innerHTML = '&#x1F50A;';
+  soundBtn.title = 'Sound On (click to mute)';
+  soundBtn.addEventListener('click', () => {
+    if (window.Sounds) {
+      const enabled = Sounds.toggle();
+      soundBtn.innerHTML = enabled ? '&#x1F50A;' : '&#x1F507;';
+      soundBtn.title = enabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
+      if (enabled) Sounds.pop();
+    }
+  });
+  document.body.appendChild(soundBtn);
+
   // Event listeners
   document.querySelectorAll('.game-card').forEach((card) => {
     card.addEventListener('click', () => {
+      if (window.Sounds) Sounds.click();
       startGame(card.dataset.game);
     });
   });
 
-  backBtn.addEventListener('click', goBack);
+  backBtn.addEventListener('click', () => {
+    if (window.Sounds) Sounds.click();
+    goBack();
+  });
 })();

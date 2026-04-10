@@ -161,6 +161,7 @@ const KanchaGame = {
       this.state = 'shooting';
       this.shotsLeft--;
       this.spawnDust(this.player.x, this.player.y, 6, '#c4a46a');
+      if (window.Sounds) Sounds.flick();
       this.updateScore();
     }
     this.aimEnd = null;
@@ -286,6 +287,7 @@ const KanchaGame = {
         this.spawnSpark(m.x, m.y, 12, m.color);
         this.addFloatingText(m.x, m.y - 20, '+1', m.color);
         this.shakeAmount = 3;
+        if (window.Sounds) Sounds.pop();
         this.updateScore();
       }
     }
@@ -301,6 +303,7 @@ const KanchaGame = {
           if (remaining === 0) {
             this.addFloatingText(this.width / 2, this.height / 2 - 60, 'Shandar!', '#FFD700');
             this.shakeAmount = 6;
+            if (window.Sounds) Sounds.success();
             for (let i = 0; i < 30; i++) {
               const angle = Math.random() * Math.PI * 2;
               const dist = Math.random() * 80;
@@ -356,6 +359,7 @@ const KanchaGame = {
         const my = (a.y + b.y) / 2;
         this.spawnDust(mx, my, Math.min(8, Math.floor(impactSpeed)), '#c4a46a');
         this.shakeAmount = Math.min(4, impactSpeed * 0.4);
+        if (window.Sounds) Sounds.click();
       }
     }
   },
